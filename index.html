@@ -1,0 +1,569 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { 
+  Plus, Trash2, Download, Eye, Users, Image as ImageIcon, 
+  FileText, CheckCircle, AlertCircle, X, FolderOpen, Save, 
+  RefreshCw, Layout, HardDrive, FileType
+} from 'lucide-react';
+
+// --- IndexedDB Helper for Persistence ---
+const DB_NAME = 'CertifyProDB_v2';
+const STORE_NAME = 'AppSettings';
+
+const initDB = () => {
+  return new Promise((resolve) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    request.onsuccess = (e) => resolve(e.target.result);
+  });
+};
+
+const saveToDB = async (key, value) => {
+  const db = await initDB();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  tx.objectStore(STORE_NAME).put(value, key);
+};
+
+const getFromDB = async (key) => {
+  const db = await initDB();
+  return new Promise((resolve) => {
+    const request = db.transaction(STORE_NAME).objectStore(STORE_NAME).get(key);
+    request.onsuccess = () => resolve(request.result);
+  });
+};
+
+// --- Main Application ---
+export default function App() {
+  const [activeTab, setActiveTab] = useState('template');
+  const [template, setTemplate] = useState(null); // { type: 'image'|'pdf', data: string|ArrayBuffer, name: string }
+  const [placeholders, setPlaceholders] = useState([
+    { id: '1', name: 'Recipient Name', x: 148, y: 100, fontSize: 30, color: '#000000', bold: true }
+  ]);
+  const [dataList, setDataList] = useState([{ id: 'init', values: { '1': 'John Doe' } }]);
+  const [directoryHandle, setDirectoryHandle] = useState(null);
+  const [localFiles, setLocalFiles] = useState([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [dragInfo, setDragInfo] = useState(null);
+  const [libsLoaded, setLibsLoaded] = useState(false);
+
+  // --- Dynamic Library Loading ---
+  useEffect(() => {
+    const loadScript = (src) => {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    };
+
+    Promise.all([
+      loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+      loadScript('https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js')
+    ]).then(() => {
+      setLibsLoaded(true);
+    }).catch(err => {
+      console.error("Failed to load libraries", err);
+    });
+  }, []);
+
+  // --- Initial State Load ---
+  useEffect(() => {
+    const loadSavedData = async () => {
+      const savedTemplate = await getFromDB('template');
+      const savedPlaceholders = await getFromDB('placeholders');
+      const savedDataList = await getFromDB('dataList');
+      
+      if (savedTemplate) setTemplate(savedTemplate);
+      if (savedPlaceholders) setPlaceholders(savedPlaceholders);
+      if (savedDataList) setDataList(savedDataList);
+    };
+    loadSavedData();
+  }, []);
+
+  // --- Persistence Sync ---
+  useEffect(() => { if (template) saveToDB('template', template); }, [template]);
+  useEffect(() => { saveToDB('placeholders', placeholders); }, [placeholders]);
+  useEffect(() => { saveToDB('dataList', dataList); }, [dataList]);
+
+  // --- Folder Management ---
+  const selectDirectory = async () => {
+    try {
+      if (typeof window.showDirectoryPicker === 'undefined') {
+        return;
+      }
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      setDirectoryHandle(handle);
+      scanDirectory(handle);
+    } catch (err) {
+      console.error("Directory selection failed", err);
+    }
+  };
+
+  const scanDirectory = async (handle = directoryHandle) => {
+    if (!handle) return;
+    setIsScanning(true);
+    const files = [];
+    try {
+      for await (const entry of handle.values()) {
+        if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.pdf')) {
+          const file = await entry.getFile();
+          files.push({
+            name: entry.name,
+            size: (file.size / 1024).toFixed(1) + ' KB',
+            lastModified: new Date(file.lastModified).toLocaleString(),
+            handle: entry
+          });
+        }
+      }
+      setLocalFiles(files.sort((a, b) => b.lastModified.localeCompare(a.lastModified)));
+    } catch (err) {
+      console.error("Scanning failed", err);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  // --- Generation Logic ---
+  const generateCerts = async () => {
+    if (!template || !directoryHandle || !libsLoaded) return;
+    setIsGenerating(true);
+
+    try {
+      if (await directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+        await directoryHandle.requestPermission({ mode: 'readwrite' });
+      }
+
+      const { jsPDF } = window.jspdf;
+      const { PDFDocument, rgb } = window.PDFLib;
+
+      for (const row of dataList) {
+        let pdfBytes;
+
+        if (template.type === 'pdf') {
+          // Handle PDF Template using pdf-lib
+          const existingPdfDoc = await PDFDocument.load(template.data);
+          const pages = existingPdfDoc.getPages();
+          const firstPage = pages[0];
+          const { width, height } = firstPage.getSize();
+
+          for (const p of placeholders) {
+            const text = row.values[p.id] || '';
+            // Convert mm to PDF units (1mm = 2.83465 points)
+            // x, y in our app are based on 297x210 mm canvas
+            const pdfX = (p.x / 297) * width;
+            const pdfY = height - ((p.y / 210) * height); // PDF coordinate system is bottom-left
+            
+            // Simplified color conversion
+            const hex = p.color.replace('#', '');
+            const r = parseInt(hex.substring(0, 2), 16) / 255;
+            const g = parseInt(hex.substring(2, 4), 16) / 255;
+            const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+            firstPage.drawText(text, {
+              x: pdfX,
+              y: pdfY,
+              size: p.fontSize * 1.5, // Scaling for points
+              color: rgb(r, g, b)
+            });
+          }
+          pdfBytes = await existingPdfDoc.save();
+        } else {
+          // Handle Image Template using jsPDF
+          const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+          const pageWidth = doc.internal.pageSize.getWidth();
+          const pageHeight = doc.internal.pageSize.getHeight();
+
+          doc.addImage(template.data, 'JPEG', 0, 0, pageWidth, pageHeight);
+
+          placeholders.forEach(p => {
+            const text = row.values[p.id] || '';
+            doc.setFontSize(p.fontSize);
+            doc.setTextColor(p.color);
+            doc.setFont(undefined, p.bold ? 'bold' : 'normal');
+            const textWidth = doc.getTextWidth(text);
+            doc.text(text, p.x - (textWidth / 2), p.y);
+          });
+          pdfBytes = doc.output('arraybuffer');
+        }
+
+        const fileName = `Cert_${(row.values[placeholders[0].id] || row.id).replace(/[^a-z0-9]/gi, '_')}.pdf`;
+        const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(pdfBytes);
+        await writable.close();
+      }
+      
+      await scanDirectory();
+      setActiveTab('history');
+    } catch (err) {
+      console.error("Generation failed", err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // --- Handlers ---
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const isPDF = file.type === 'application/pdf';
+    const reader = new FileReader();
+    
+    reader.onload = (event) => {
+      setTemplate({ 
+        type: isPDF ? 'pdf' : 'image', 
+        data: event.target.result, 
+        name: file.name 
+      });
+    };
+
+    if (isPDF) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const paste = e.clipboardData.getData('text');
+    const rows = paste.split(/\r?\n/).filter(r => r.trim() !== '');
+    const newData = rows.map(row => {
+      const cells = row.split('\t');
+      const values = {};
+      placeholders.forEach((p, idx) => { values[p.id] = cells[idx] || ''; });
+      return { id: Math.random().toString(36).substr(2, 9), values };
+    });
+    setDataList(newData);
+  };
+
+  if (!libsLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
+        <div className="text-center animate-pulse">
+          <RefreshCw className="animate-spin mx-auto mb-4" size={48} />
+          <h2 className="text-xl font-bold">Initializing CertifyLocal...</h2>
+          <p className="text-slate-400 text-sm mt-2">Loading document libraries</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-900 font-sans p-2 md:p-6">
+      <div className="max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col min-h-[90vh]">
+        
+        {/* Header */}
+        <header className="bg-slate-900 text-white p-4 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-500 p-2 rounded-xl shadow-lg shadow-emerald-500/20">
+              <HardDrive size={24} />
+            </div>
+            <div>
+              <h1 className="text-xl font-black tracking-tight">CertifyLocal</h1>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                <span className={directoryHandle ? "text-emerald-400" : "text-amber-400"}>
+                  {directoryHandle ? "● Connected" : "○ Disconnected"}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <nav className="flex bg-slate-800 p-1 rounded-2xl">
+            {[
+              { id: 'template', label: 'Template', icon: ImageIcon },
+              { id: 'design', label: 'Design', icon: Layout },
+              { id: 'data', label: 'Data', icon: Users },
+              { id: 'history', label: 'Gallery', icon: FolderOpen },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                  activeTab === tab.id ? 'bg-white text-slate-900 shadow-xl scale-105' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <tab.icon size={16} />
+                <span className="hidden sm:inline">{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </header>
+
+        <main className="flex-1 p-4 md:p-8 overflow-y-auto">
+          
+          {/* Tab 1: Template */}
+          {activeTab === 'template' && (
+            <div className="max-w-2xl mx-auto space-y-6">
+              <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
+                {template ? (
+                  <div className="space-y-4">
+                    {template.type === 'image' ? (
+                      <img src={template.data} className="max-h-64 mx-auto rounded-lg shadow-xl border border-white" />
+                    ) : (
+                      <div className="w-48 h-64 bg-white mx-auto rounded-lg shadow-xl border border-slate-200 flex flex-col items-center justify-center p-4">
+                        <FileText size={48} className="text-emerald-500 mb-2" />
+                        <span className="text-xs font-bold text-slate-600 truncate w-full text-center">{template.name}</span>
+                        <span className="text-[10px] text-slate-400 mt-1 uppercase font-black">PDF Template</span>
+                      </div>
+                    )}
+                    <div className="flex justify-center gap-3">
+                      <button onClick={() => setTemplate(null)} className="px-4 py-2 text-red-500 font-bold text-sm">Remove</button>
+                      <button onClick={() => setActiveTab('design')} className="px-6 py-2 bg-slate-900 text-white rounded-xl font-bold shadow-lg">Next: Design</button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="cursor-pointer group">
+                    <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                      <Plus size={32} />
+                    </div>
+                    <h2 className="text-xl font-bold mb-1">Upload Template</h2>
+                    <p className="text-slate-400 text-sm mb-6">PDF, PNG, JPEG allowed</p>
+                    <span className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-bold shadow-xl inline-block">Browse Files</span>
+                    <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleFileUpload} />
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Tab 2: Design */}
+          {activeTab === 'design' && (
+            <div className="grid lg:grid-cols-4 gap-8">
+              <div className="lg:col-span-3 space-y-4">
+                <div 
+                  className="relative bg-slate-200 rounded-2xl overflow-hidden shadow-inner cursor-crosshair"
+                  onMouseMove={(e) => {
+                    if (!dragInfo) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const dx = ((e.clientX - dragInfo.startX) / rect.width) * 297;
+                    const dy = ((e.clientY - dragInfo.startY) / rect.height) * 210;
+                    setPlaceholders(placeholders.map(p => p.id === dragInfo.id ? { 
+                      ...p, 
+                      x: Math.max(0, Math.min(297, Math.round(dragInfo.origX + dx))), 
+                      y: Math.max(0, Math.min(210, Math.round(dragInfo.origY + dy))) 
+                    } : p));
+                  }}
+                  onMouseUp={() => setDragInfo(null)}
+                >
+                  <div className="relative mx-auto bg-white" style={{ aspectRatio: '297/210' }}>
+                    {template?.type === 'image' && <img src={template.data} className="w-full h-full object-contain pointer-events-none select-none" />}
+                    {template?.type === 'pdf' && <div className="w-full h-full bg-slate-50 flex items-center justify-center text-slate-300 font-bold uppercase tracking-widest italic">PDF Preview Unavailable (Place markers below)</div>}
+                    {!template && <div className="w-full h-full bg-slate-50 flex items-center justify-center text-slate-300">No template loaded</div>}
+                    
+                    {placeholders.map(p => (
+                      <div
+                        key={p.id}
+                        onMouseDown={(e) => {
+                          setDragInfo({ id: p.id, startX: e.clientX, startY: e.clientY, origX: p.x, origY: p.y });
+                        }}
+                        className="absolute cursor-move select-none px-2 py-1 bg-white/90 border border-emerald-500 rounded shadow-sm flex items-center whitespace-nowrap z-10"
+                        style={{
+                          left: `${(p.x / 297) * 100}%`,
+                          top: `${(p.y / 210) * 100}%`,
+                          transform: 'translate(-50%, -50%)',
+                          fontSize: `${p.fontSize * 0.7}px`,
+                          color: p.color,
+                          fontWeight: p.bold ? 'bold' : 'normal'
+                        }}
+                      >
+                        <span className="text-[9px] bg-emerald-500 text-white px-1 absolute -top-4 left-0 rounded-sm">Drag</span>
+                        {p.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-bold text-slate-800">Labels</h3>
+                  <button 
+                    disabled={placeholders.length >= 5}
+                    onClick={() => setPlaceholders([...placeholders, { id: Date.now().toString(), name: `Label ${placeholders.length+1}`, x: 148, y: 110, fontSize: 20, color: '#000000', bold: false }])} 
+                    className="p-1 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 disabled:opacity-30"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                  {placeholders.map(p => (
+                    <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 relative group">
+                      <button onClick={() => setPlaceholders(placeholders.filter(x => x.id !== p.id))} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500">
+                        <Trash2 size={14} />
+                      </button>
+                      <input 
+                        value={p.name} 
+                        onChange={e => setPlaceholders(placeholders.map(x => x.id === p.id ? {...x, name: e.target.value} : x))}
+                        className="w-full bg-transparent font-bold text-sm border-b border-slate-200 focus:border-emerald-500 outline-none pb-1"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase">Size</label>
+                          <input type="number" value={p.fontSize} onChange={e => setPlaceholders(placeholders.map(x => x.id === p.id ? {...x, fontSize: parseInt(e.target.value)} : x))} className="w-full text-xs bg-white rounded border p-1" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase">Color</label>
+                          <input type="color" value={p.color} onChange={e => setPlaceholders(placeholders.map(x => x.id === p.id ? {...x, color: e.target.value} : x))} className="w-full h-6 rounded cursor-pointer" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" checked={p.bold} onChange={e => setPlaceholders(placeholders.map(x => x.id === p.id ? {...x, bold: e.target.checked} : x))} id={`bold-${p.id}`} />
+                        <label htmlFor={`bold-${p.id}`} className="text-[10px] font-bold text-slate-600">Bold Font</label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab 3: Data */}
+          {activeTab === 'data' && (
+            <div className="space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-end gap-4">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">Batch Processing</h2>
+                  <p className="text-slate-500 text-sm">Paste your data list from your spreadsheet software.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={selectDirectory} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all ${directoryHandle ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'}`}>
+                    <FolderOpen size={18} /> {directoryHandle ? 'Folder Connected' : 'Link Folder'}
+                  </button>
+                  <button 
+                    disabled={!template || !directoryHandle || isGenerating}
+                    onClick={generateCerts}
+                    className="bg-slate-900 text-white px-8 py-2 rounded-xl font-bold shadow-xl disabled:opacity-30 flex items-center gap-2"
+                  >
+                    {isGenerating ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
+                    {isGenerating ? 'Processing...' : 'Run Generation'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="border border-slate-200 rounded-3xl overflow-hidden bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 font-bold text-slate-400 uppercase text-[10px]">
+                      <tr>
+                        <th className="px-6 py-4 w-12 text-center">Idx</th>
+                        {placeholders.map(p => <th key={p.id} className="px-6 py-4">{p.name}</th>)}
+                        <th className="px-6 py-4 w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody onPaste={handlePaste} className="divide-y divide-slate-100">
+                      {dataList.map((row, idx) => (
+                        <tr key={row.id} className="hover:bg-slate-50/50">
+                          <td className="px-6 py-4 text-slate-300 font-mono text-center">{idx + 1}</td>
+                          {placeholders.map(p => (
+                            <td key={p.id} className="px-6 py-2">
+                              <input 
+                                value={row.values[p.id] || ''}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setDataList(dataList.map(r => r.id === row.id ? { ...r, values: { ...r.values, [p.id]: val } } : r));
+                                }}
+                                className="w-full bg-transparent p-1 outline-none border-b border-transparent focus:border-emerald-500"
+                                placeholder="Paste or type..."
+                              />
+                            </td>
+                          ))}
+                          <td className="px-6 py-4">
+                            <button onClick={() => setDataList(dataList.filter(r => r.id !== row.id))} className="text-slate-200 hover:text-red-500">
+                              <X size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td colSpan={placeholders.length + 2} className="px-6 py-4">
+                          <button onClick={() => {
+                            const values = {};
+                            placeholders.forEach(p => values[p.id] = '');
+                            setDataList([...dataList, { id: Date.now().toString(), values }]);
+                          }} className="text-emerald-500 font-bold text-xs flex items-center gap-1">
+                            <Plus size={14} /> Add Manual Row
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab 4: Gallery */}
+          {activeTab === 'history' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">Local Gallery</h2>
+                  <p className="text-slate-500 text-sm">Synced with your local folder</p>
+                </div>
+                <button onClick={() => scanDirectory()} className="flex items-center gap-2 text-emerald-600 font-bold hover:bg-emerald-50 px-4 py-2 rounded-xl">
+                  <RefreshCw size={18} className={isScanning ? 'animate-spin' : ''} /> Refresh Sync
+                </button>
+              </div>
+
+              {!directoryHandle ? (
+                <div className="py-20 text-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                  <FolderOpen size={48} className="mx-auto text-slate-200 mb-4" />
+                  <h3 className="font-bold text-slate-400">Folder connection required</h3>
+                  <button onClick={selectDirectory} className="mt-4 px-6 py-2 bg-slate-900 text-white rounded-xl font-bold">Connect Folder</button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {localFiles.map(file => (
+                    <div key={file.name} className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm hover:shadow-xl group transition-all">
+                      <div className="aspect-[1.4] bg-slate-50 rounded-2xl mb-4 flex items-center justify-center relative overflow-hidden">
+                        <FileText size={48} className="text-slate-200 group-hover:scale-110 transition-transform" />
+                        <div className="absolute inset-0 bg-emerald-500/0 group-hover:bg-emerald-500/5" />
+                      </div>
+                      <div className="flex justify-between items-start min-w-0">
+                        <div className="truncate pr-2">
+                          <h4 className="font-bold text-slate-800 truncate text-sm">{file.name}</h4>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{file.size} • {file.lastModified}</p>
+                        </div>
+                        <button className="p-2 bg-slate-50 text-slate-400 hover:text-emerald-500 rounded-lg shrink-0">
+                          <Download size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {localFiles.length === 0 && (
+                    <div className="col-span-full py-20 text-center text-slate-400 italic">No certificates found in this folder.</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+        </main>
+      </div>
+
+      <footer className="mt-6 text-center text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center justify-center gap-6">
+        <span className="flex items-center gap-1"><CheckCircle size={10} className="text-emerald-500" /> Persistence: Active</span>
+        <span className="flex items-center gap-1"><FileType size={10} className="text-emerald-500" /> PDF Libs: Loaded</span>
+      </footer>
+
+      {isGenerating && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-sm w-full animate-in zoom-in duration-300">
+            <RefreshCw className="w-16 h-16 text-emerald-500 animate-spin mx-auto mb-4" />
+            <h3 className="text-xl font-black text-slate-900">Generating Files</h3>
+            <p className="text-sm text-slate-500 mt-2">We are writing certificates directly to your local folder. Do not close this tab.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
