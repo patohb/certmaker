@@ -83,6 +83,7 @@
                 <input type="text" id="google-client-id" class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm mb-4" placeholder="Client ID">
                 <button onclick="updateClientId()" class="w-full bg-emerald-600 py-2 rounded font-bold hover:bg-emerald-500">Save & Reload</button>
                 <p class="text-xs text-slate-500 mt-4">Origin: <span id="current-origin"></span></p>
+                <p class="text-[10px] text-slate-400 mt-2">Error 403? Enable <b>Gmail API</b> in Google Cloud Console > APIs & Services.</p>
             </div>
         </div>
 
@@ -160,6 +161,9 @@
                             <p class="text-slate-500 text-sm" data-lang="pasteHint">Paste directly from Excel or Google Sheets into the grid below.</p>
                         </div>
                         <div class="flex gap-3">
+                            <button onclick="selectDirectory()" id="btn-open-folder" class="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all bg-white text-slate-600 border border-slate-300 hover:bg-slate-50">
+                                <i data-lucide="folder" class="w-4 h-4"></i> <span data-lang="openSavedFolder">Open Saved Folder</span>
+                            </button>
                             <button onclick="selectDirectory()" id="folder-btn" class="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all bg-amber-50 text-amber-600 border border-amber-100">
                                 <i data-lucide="folder-open" class="w-4 h-4"></i> <span data-lang="linkFolder">Link Folder</span>
                             </button>
@@ -224,6 +228,7 @@
             placeholders: [{ id: '1', name: 'Recipient Name', x: 148, y: 100, fontSize: 30, color: '#000000', bold: true }],
             dataList: [{ id: 'init', values: { '1': 'John Doe', 'email': '' } }],
             directoryHandle: null,
+            folderName: '', // Added to store folder name
             dragInfo: null,
             outputFormat: 'pdf',
             emailEnabled: false,
@@ -232,25 +237,25 @@
             auth: { token: null, expiry: 0 }
         };
 
-        const DB_NAME = 'CertifyLocalDB_v10'; // Bumped for Clean Slate
+        const DB_NAME = 'CertifyLocalDB_v11'; // Bumped for Clean Slate
         const STORE_NAME = 'AppState';
 
         const translations = {
             en: {
                 tabTemplate: "Template", tabDesign: "Design", tabData: "Data",
-                folderDisconnected: "○ Folder Disconnected", folderConnected: "● Folder Linked (Ready)",
+                folderDisconnected: "○ Folder Disconnected", folderConnected: "● Linked: ",
                 signIn: "Sign in", saveId: "Save ID", loadTemplate: "Load Template", browseFiles: "Browse Files", remove: "Remove", nextDesign: "Next: Design",
                 uploadHint: "Upload a template to begin", labels: "Labels", saveConfig: "Save Config", outputFormat: "Output Format", enableEmail: "Enable Email",
-                recipientData: "Recipient Data", pasteHint: "Paste directly from Excel/Sheets", linkFolder: "Link Folder", runProcess: "Run Process",
+                recipientData: "Recipient Data", pasteHint: "Paste directly from Excel/Sheets", linkFolder: "Link Folder", openSavedFolder: "Open Saved Folder", runProcess: "Run Process",
                 lastCompleted: "Last process completed", clearAll: "Clear All", addRow: "Add Empty Row", processing: "Processing Batch",
                 filesSaved: "Files saved", emailsSent: "Emails sent"
             },
             ms: {
                 tabTemplate: "Templat", tabDesign: "Reka Bentuk", tabData: "Data",
-                folderDisconnected: "○ Folder Terputus", folderConnected: "● Folder Terhubung (Sedia)",
+                folderDisconnected: "○ Folder Terputus", folderConnected: "● Terhubung: ",
                 signIn: "Log Masuk", saveId: "Simpan ID", loadTemplate: "Muat Templat", browseFiles: "Pilih Fail", remove: "Buang", nextDesign: "Seterusnya: Reka Bentuk",
                 uploadHint: "Muat naik templat untuk bermula", labels: "Label", saveConfig: "Simpan Konfigurasi", outputFormat: "Format Output", enableEmail: "Aktifkan E-mel",
-                recipientData: "Data Penerima", pasteHint: "Tampal terus dari Excel/Sheets", linkFolder: "Paut Folder", runProcess: "Jalankan Proses",
+                recipientData: "Data Penerima", pasteHint: "Tampal terus dari Excel/Sheets", linkFolder: "Paut Folder", openSavedFolder: "Buka Folder Disimpan", runProcess: "Jalankan Proses",
                 lastCompleted: "Proses terakhir selesai", clearAll: "Padam Semua", addRow: "Tambah Baris Kosong", processing: "Memproses Kelompok",
                 filesSaved: "Fail disimpan", emailsSent: "E-mel dihantar"
             }
@@ -351,6 +356,7 @@
         async function selectDirectory() {
             try {
                 state.directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                state.folderName = state.directoryHandle.name; // Save folder name
                 updateFolderUI(true);
                 saveState();
             } catch (e) { console.error(e); }
@@ -360,12 +366,16 @@
             const btn = document.getElementById('folder-btn');
             const status = document.getElementById('connection-status');
             const statusText = status.querySelector('span');
+            
             if (connected) {
                 btn.classList.replace('bg-amber-50', 'bg-emerald-50');
                 btn.classList.replace('text-amber-600', 'text-emerald-600');
                 btn.classList.replace('border-amber-100', 'border-emerald-100');
+                // Use the stored folder name
+                const label = translations[currentLang].folderConnected + (state.folderName || "");
+                statusText.textContent = label;
+                btn.querySelector('span').textContent = label;
                 status.className = "flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-wider";
-                statusText.textContent = translations[currentLang].folderConnected;
             } else {
                 statusText.textContent = translations[currentLang].folderDisconnected;
             }
@@ -391,12 +401,6 @@
             state.activeTab = tabId;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.getElementById(`tab-${tabId}`).classList.add('active');
-            document.querySelectorAll('.nav-btn').forEach(btn => {
-                btn.classList.remove('bg-white', 'text-slate-900', 'shadow-xl');
-                btn.classList.add('text-slate-400', 'hover:text-white');
-            });
-            document.getElementById(`nav-${tabId}`).classList.add('bg-white', 'text-slate-900', 'shadow-xl');
-            document.getElementById(`nav-${tabId}`).classList.remove('text-slate-400', 'hover:text-white');
             
             if (tabId === 'design') renderDesignCanvas();
             if (tabId === 'data') renderDataTable();
@@ -408,7 +412,6 @@
 
         // --- Logic: Template ---
         function arrayBufferToBase64(buffer) {
-            // Safe conversion using blob to avoid call stack size exceeded for large files
             return new Promise((resolve, reject) => {
                 const blob = new Blob([buffer]);
                 const reader = new FileReader();
@@ -431,7 +434,7 @@
             const isPDF = file.type === 'application/pdf';
             const reader = new FileReader();
             
-            reader.readAsDataURL(file); // Use DataURL for everything initialy
+            reader.readAsDataURL(file); 
             
             reader.onload = async (event) => {
                 try {
@@ -573,7 +576,6 @@
 
         async function sendGmail(recipient, subject, body, attachmentData, fileName, mimeType) {
             try {
-                // Async safe conversion for large files
                 const b64 = await arrayBufferToBase64(attachmentData);
                 const msg = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="foo_bar_baz"`, "", `--foo_bar_baz`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--foo_bar_baz`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", b64, "", `--foo_bar_baz--`].join("\r\n");
                 
@@ -584,10 +586,13 @@
                     body: JSON.stringify({ raw }) 
                 });
                 
+                if (res.status === 403) {
+                    alert("Error 403: Please enable the 'Gmail API' in your Google Cloud Console.");
+                    return false;
+                }
                 if (!res.ok) {
-                    const errBody = await res.json();
-                    console.error("Gmail Error:", errBody);
-                    throw new Error(errBody.error?.message || "Email failed");
+                    console.error("Gmail Error", await res.json());
+                    return false;
                 }
                 return true;
             } catch (e) { 
@@ -620,7 +625,6 @@
                 const fmt = state.outputFormat;
                 let saved = 0, emailed = 0;
                 
-                // Optimized pre-load logic
                 let baseBytes = null;
                 if (state.template.type === 'pdf') {
                     const b64 = state.template.data.split(',')[1];
@@ -637,11 +641,10 @@
                     bar.style.width = `${((i+1)/state.dataList.length)*100}%`;
                     txt.textContent = `Processing ${fileName}...`;
 
-                    let data; // Should be Uint8Array or ArrayBuffer
+                    let data; // Uint8Array
                     
                     if (fmt === 'pdf') {
                         if (state.template.type === 'pdf') {
-                            // Slice buffer to prevent detachment
                             const doc = await PDFDocument.load(baseBytes.slice(0)); 
                             const p = doc.getPages()[0];
                             const { width, height } = p.getSize();
@@ -649,7 +652,7 @@
                                 const h = pl.color.replace('#','');
                                 p.drawText(row.values[pl.id]||'', { x: (pl.x/297)*width, y: height-((pl.y/210)*height), size: pl.fontSize*1.5, color: rgb(parseInt(h.substring(0,2),16)/255, parseInt(h.substring(2,4),16)/255, parseInt(h.substring(4,6),16)/255) });
                             });
-                            data = await doc.save(); // Returns Uint8Array
+                            data = await doc.save(); 
                         } else {
                             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
                             doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210);
@@ -667,7 +670,6 @@
 
                     if (state.emailEnabled && row.values['email']) {
                         txt.textContent = `Emailing ${row.values['email']}...`;
-                        // Send data buffer directly
                         if (await sendGmail(row.values['email'], "Your Certificate", "Attached is your document.", data, fileName, mime)) {
                             emailed++;
                             const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
@@ -676,8 +678,6 @@
                             await w.close();
                             saved++;
                         } else {
-                            // Logic: User requested ONLY upload if email sent. 
-                            // So we do NOT save here.
                             console.warn(`Skipped saving ${fileName} because email failed.`);
                         }
                     } else {
