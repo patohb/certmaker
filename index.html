@@ -91,7 +91,7 @@
                 </button>
             </nav>
 
-            <!-- Google Login Section -->
+            <!-- Google Login Section -->Q
             <div id="auth-section" class="flex items-center gap-2 bg-slate-800 rounded-xl px-3 py-1.5 ml-2">
                 <button id="btn-login" onclick="handleAuthClick()" class="text-xs font-bold text-slate-300 hover:text-white flex items-center gap-2">
                     <i data-lucide="log-in" class="w-4 h-4"></i> Sign in
@@ -365,10 +365,10 @@
             outputFormat: 'pdf',
             emailEnabled: false,
             googleClientId: '',
-            lastBatchStatus: null // Added to track/save the last process
+            lastBatchStatus: null
         };
 
-        const DB_NAME = 'CertifyLocalDB_v5'; 
+        const DB_NAME = 'CertifyLocalDB_v6'; 
         const STORE_NAME = 'AppState';
 
         async function initDB() {
@@ -380,10 +380,15 @@
         }
 
         async function saveState() {
-            const db = await initDB();
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const { directoryHandle, dragInfo, ...toSave } = state;
-            tx.objectStore(STORE_NAME).put(toSave, 'current');
+            try {
+                const db = await initDB();
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                // Ensure we never try to save the file handle or drag objects
+                const { directoryHandle, dragInfo, ...toSave } = state;
+                tx.objectStore(STORE_NAME).put(toSave, 'current');
+            } catch (err) {
+                console.warn("Failed to save state:", err);
+            }
         }
 
         async function loadState() {
@@ -554,27 +559,43 @@
             reader.onload = async (event) => {
                 let preview = '';
                 let dataToStore = '';
-                if (isPDF) {
-                    const pdfData = new Uint8Array(event.target.result);
-                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-                    const pdf = await loadingTask.promise;
-                    const page = await pdf.getPage(1);
-                    const viewport = page.getViewport({ scale: 2.0 });
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
-                    await page.render({ canvasContext: context, viewport: viewport }).promise;
-                    preview = canvas.toDataURL();
-                    dataToStore = arrayBufferToBase64(event.target.result);
-                } else {
-                    preview = event.target.result;
-                    dataToStore = event.target.result; 
+                
+                try {
+                    // Safe handling: Convert ArrayBuffer to Base64 String FIRST
+                    // This prevents the buffer from being "detached" by PDF.js workers or logic
+                    const rawBuffer = event.target.result;
+                    dataToStore = arrayBufferToBase64(rawBuffer);
+
+                    if (isPDF) {
+                        // Create a fresh copy/view for PDF.js to avoid touching the original buffer
+                        const pdfData = new Uint8Array(rawBuffer.slice(0)); 
+                        const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                        const pdf = await loadingTask.promise;
+                        const page = await pdf.getPage(1);
+                        const viewport = page.getViewport({ scale: 2.0 });
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+                        await page.render({ canvasContext: context, viewport: viewport }).promise;
+                        preview = canvas.toDataURL();
+                    } else {
+                        // For images, result is already a data URL string
+                        preview = event.target.result;
+                        dataToStore = event.target.result; 
+                    }
+                    
+                    state.template = { type: isPDF ? 'pdf' : 'image', data: dataToStore, name: file.name, preview: preview };
+                    renderTemplate(); 
+                    saveState();
+                } catch (err) {
+                    console.error("File load error:", err);
+                    alert("Failed to load file. Please try again.");
                 }
-                state.template = { type: isPDF ? 'pdf' : 'image', data: dataToStore, name: file.name, preview: preview };
-                renderTemplate(); saveState();
             };
-            if (isPDF) reader.readAsArrayBuffer(file); else reader.readAsDataURL(file);
+            
+            if (isPDF) reader.readAsArrayBuffer(file); 
+            else reader.readAsDataURL(file);
         });
 
         function renderTemplate() {
@@ -654,7 +675,12 @@
                 let successEmailCount = 0;
                 let successSavedCount = 0;
 
-                const templateBytes = state.template.type === 'pdf' ? new Uint8Array(base64ToArrayBuffer(state.template.data)) : null;
+                // Load Template Data once
+                let templateBytesOriginal = null;
+                if (state.template.type === 'pdf') {
+                    // Convert stored base64 string back to a clean ArrayBuffer
+                    templateBytesOriginal = base64ToArrayBuffer(state.template.data);
+                }
 
                 for (let i = 0; i < state.dataList.length; i++) {
                     const row = state.dataList[i];
@@ -670,18 +696,20 @@
                     let data;
                     if (fmt === 'pdf') {
                         if (state.template.type === 'pdf') {
-                            // FRESH CLONE for every doc fixes detached buffer error
-                            const doc = await PDFDocument.load(templateBytes.slice(0));
+                            // FRESH COPY of bytes for every iteration prevents detached buffer error
+                            const doc = await PDFDocument.load(templateBytesOriginal.slice(0));
                             const page = doc.getPages()[0];
                             const { width, height } = page.getSize();
                             state.placeholders.forEach(p => {
                                 const hex = p.color.replace('#', '');
                                 page.drawText(row.values[p.id] || '', { 
-                                    x: (p.x / 297) * width, y: height - ((p.y / 210) * height), 
-                                    size: p.fontSize * 1.5, color: rgb(parseInt(hex.substring(0,2),16)/255, parseInt(hex.substring(2,4),16)/255, parseInt(hex.substring(4,6),16)/255) 
+                                    x: (p.x / 297) * width, 
+                                    y: height - ((p.y / 210) * height), 
+                                    size: p.fontSize * 1.5, 
+                                    color: rgb(parseInt(hex.substring(0,2),16)/255, parseInt(hex.substring(2,4),16)/255, parseInt(hex.substring(4,6),16)/255) 
                                 });
                             });
-                            data = (await doc.save()).buffer;
+                            data = (await doc.save()).buffer; // Resulting buffer for this specific doc
                         } else {
                             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
                             doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210);
