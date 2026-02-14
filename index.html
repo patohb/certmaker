@@ -215,11 +215,9 @@
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         
-        // --- Configuration ---
         const HARDCODED_GOOGLE_CLIENT_ID = '939971084257-icn512k0in8ohsmbphr3i1uhbp1k1os4.apps.googleusercontent.com';
         const SCOPES = 'https://www.googleapis.com/auth/gmail.send';
         
-        // --- State Management ---
         let accessToken = null;
         let tokenClient;
         let state = {
@@ -228,7 +226,7 @@
             placeholders: [{ id: '1', name: 'Recipient Name', x: 148, y: 100, fontSize: 30, color: '#000000', bold: true }],
             dataList: [{ id: 'init', values: { '1': 'John Doe', 'email': '' } }],
             directoryHandle: null,
-            folderName: '', // Added to store folder name
+            folderName: '', 
             dragInfo: null,
             outputFormat: 'pdf',
             emailEnabled: false,
@@ -237,7 +235,7 @@
             auth: { token: null, expiry: 0 }
         };
 
-        const DB_NAME = 'CertifyLocalDB_v11'; // Bumped for Clean Slate
+        const DB_NAME = 'CertifyLocalDB_v12'; // Clean DB
         const STORE_NAME = 'AppState';
 
         const translations = {
@@ -262,7 +260,7 @@
         };
         let currentLang = 'en';
 
-        // --- Database Utils ---
+        // --- Database ---
         async function initDB() {
             return new Promise(resolve => {
                 const r = indexedDB.open(DB_NAME, 1);
@@ -304,6 +302,44 @@
                     resolve();
                 };
             });
+        }
+
+        // --- Core ---
+        function toggleLanguage() {
+            currentLang = currentLang === 'en' ? 'ms' : 'en';
+            document.getElementById('lang-label').textContent = currentLang.toUpperCase();
+            applyLanguage();
+        }
+
+        function applyLanguage() {
+            document.querySelectorAll('[data-lang]').forEach(el => {
+                const key = el.getAttribute('data-lang');
+                if (translations[currentLang][key]) el.textContent = translations[currentLang][key];
+            });
+            if (state.directoryHandle) updateFolderUI(true);
+            renderBatchStatus();
+        }
+
+        function switchTab(tabId) {
+            state.activeTab = tabId;
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+            
+            // Fix: Actually update tab visual state
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('bg-white', 'text-slate-900', 'shadow-xl');
+                btn.classList.add('text-slate-400', 'hover:text-white');
+            });
+            const activeBtn = document.getElementById(`nav-${tabId}`);
+            activeBtn.classList.add('bg-white', 'text-slate-900', 'shadow-xl');
+            activeBtn.classList.remove('text-slate-400', 'hover:text-white');
+
+            if (tabId === 'design') renderDesignCanvas();
+            if (tabId === 'data') renderDataTable();
+        }
+
+        function renderAll() {
+            renderTemplate(); renderPlaceholders(); renderDataTable(); lucide.createIcons();
         }
 
         // --- Auth ---
@@ -356,61 +392,27 @@
         async function selectDirectory() {
             try {
                 state.directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-                state.folderName = state.directoryHandle.name; // Save folder name
+                state.folderName = state.directoryHandle.name; 
                 updateFolderUI(true);
                 saveState();
-            } catch (e) { console.error(e); }
+            } catch (e) { if (e.name !== 'AbortError') alert("Folder access failed: " + e.message); }
         }
 
         function updateFolderUI(connected) {
             const btn = document.getElementById('folder-btn');
-            const status = document.getElementById('connection-status');
-            const statusText = status.querySelector('span');
-            
+            const statusText = document.getElementById('connection-status').querySelector('span');
             if (connected) {
                 btn.classList.replace('bg-amber-50', 'bg-emerald-50');
                 btn.classList.replace('text-amber-600', 'text-emerald-600');
                 btn.classList.replace('border-amber-100', 'border-emerald-100');
-                // Use the stored folder name
-                const label = translations[currentLang].folderConnected + (state.folderName || "");
-                statusText.textContent = label;
-                btn.querySelector('span').textContent = label;
-                status.className = "flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-wider";
+                statusText.textContent = translations[currentLang].folderConnected + (state.folderName || "");
+                document.getElementById('connection-status').className = "flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-wider";
             } else {
                 statusText.textContent = translations[currentLang].folderDisconnected;
             }
         }
 
-        // --- Core Functions ---
-        function toggleLanguage() {
-            currentLang = currentLang === 'en' ? 'ms' : 'en';
-            document.getElementById('lang-label').textContent = currentLang.toUpperCase();
-            applyLanguage();
-        }
-
-        function applyLanguage() {
-            document.querySelectorAll('[data-lang]').forEach(el => {
-                const key = el.getAttribute('data-lang');
-                if (translations[currentLang][key]) el.textContent = translations[currentLang][key];
-            });
-            if (state.directoryHandle) updateFolderUI(true);
-            renderBatchStatus();
-        }
-
-        function switchTab(tabId) {
-            state.activeTab = tabId;
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.getElementById(`tab-${tabId}`).classList.add('active');
-            
-            if (tabId === 'design') renderDesignCanvas();
-            if (tabId === 'data') renderDataTable();
-        }
-
-        function renderAll() {
-            renderTemplate(); renderPlaceholders(); renderDataTable(); lucide.createIcons();
-        }
-
-        // --- Logic: Template ---
+        // --- Template ---
         function arrayBufferToBase64(buffer) {
             return new Promise((resolve, reject) => {
                 const blob = new Blob([buffer]);
@@ -433,14 +435,11 @@
             if (!file) return;
             const isPDF = file.type === 'application/pdf';
             const reader = new FileReader();
-            
             reader.readAsDataURL(file); 
-            
             reader.onload = async (event) => {
                 try {
                     const dataUrl = event.target.result;
                     let preview = '', dataStr = '';
-                    
                     if (isPDF) {
                         const base64 = dataUrl.split(',')[1];
                         dataStr = dataUrl; 
@@ -453,8 +452,7 @@
                         await page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise;
                         preview = c.toDataURL();
                     } else {
-                        preview = dataUrl;
-                        dataStr = dataUrl;
+                        preview = dataUrl; dataStr = dataUrl;
                     }
                     state.template = { type: isPDF ? 'pdf' : 'image', data: dataStr, name: file.name, preview: preview };
                     renderTemplate(); saveState();
@@ -474,7 +472,7 @@
         }
         function removeTemplate() { state.template = null; renderTemplate(); saveState(); }
 
-        // --- Logic: Design ---
+        // --- Design ---
         async function manualSaveDesign() {
             await saveState();
             const btn = document.getElementById('btn-save-design');
@@ -488,7 +486,6 @@
         function renderDesignCanvas() {
             const canvas = document.getElementById('design-canvas');
             canvas.innerHTML = '';
-            // FIX: Removed object-contain to force stretch (fill), ensuring WYSIWYG
             if (state.template?.preview) canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full pointer-events-none select-none shadow-lg">`;
             else canvas.innerHTML = `<p class="text-slate-300" data-lang="uploadHint">${translations[currentLang].uploadHint}</p>`;
             
@@ -518,7 +515,6 @@
             renderPlaceholders(); renderDesignCanvas(); saveState();
         }
         function removePlaceholder(id) { state.placeholders = state.placeholders.filter(x=>x.id!==id); renderPlaceholders(); renderDesignCanvas(); saveState(); }
-        
         function renderPlaceholders() {
             const list = document.getElementById('placeholders-list'); list.innerHTML = '';
             state.placeholders.forEach(p => {
@@ -533,7 +529,6 @@
 
         // --- Logic: Data ---
         function toggleEmailColumn(enabled) { state.emailEnabled = enabled; renderDataTable(); saveState(); }
-        
         function renderDataTable() {
             const head = document.getElementById('table-header');
             head.innerHTML = `<tr><th class="grid-header w-12 text-center">#</th>${state.placeholders.map(p=>`<th class="grid-header">${p.name}</th>`).join('')}${state.emailEnabled ? `<th class="grid-header w-64 bg-blue-50 text-blue-600">Recipient Email</th>`:''}<th class="grid-header w-12"></th></tr>`;
@@ -546,7 +541,6 @@
             document.getElementById('row-count').textContent = `${state.dataList.length} Rows`;
             lucide.createIcons();
         }
-        
         function handleGridPaste(e) {
             e.preventDefault();
             const lines = e.clipboardData.getData('text').split(/\r?\n/).filter(l => l.trim() !== '');
@@ -560,7 +554,6 @@
                 renderDataTable(); saveState();
             } else { e.target.value = lines[0]; e.target.dispatchEvent(new Event('input')); }
         }
-        
         function addManualRow() { const v = {}; state.placeholders.forEach(p => v[p.id] = ''); if (state.emailEnabled) v['email'] = ''; state.dataList.push({ id: Date.now().toString(), values: v }); renderDataTable(); }
         function removeRow(id) { state.dataList = state.dataList.filter(r => r.id !== id); renderDataTable(); saveState(); }
         function clearDataTable() { if (confirm("Clear all?")) { state.dataList = []; renderDataTable(); saveState(); } }
@@ -579,41 +572,44 @@
             try {
                 const b64 = await arrayBufferToBase64(attachmentData);
                 const msg = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="foo_bar_baz"`, "", `--foo_bar_baz`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--foo_bar_baz`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", b64, "", `--foo_bar_baz--`].join("\r\n");
-                
                 const raw = window.btoa(unescape(encodeURIComponent(msg))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
                 const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { 
                     method: 'POST', 
                     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, 
                     body: JSON.stringify({ raw }) 
                 });
-                
-                if (res.status === 403) {
-                    alert("Error 403: Please enable the 'Gmail API' in your Google Cloud Console.");
-                    return false;
-                }
                 if (!res.ok) {
-                    console.error("Gmail Error", await res.json());
-                    return false;
+                    console.warn(`Email Failed (${res.status}):`, await res.json());
+                    return false; 
                 }
                 return true;
-            } catch (e) { 
-                console.error("Email Exception:", e); 
-                return false; 
+            } catch (e) { console.error("Email Exception:", e); return false; }
+        }
+
+        async function saveFileToFolder(fileName, data) {
+            try {
+                const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
+                const w = await h.createWritable(); 
+                await w.write(data); 
+                await w.close();
+                return true;
+            } catch (e) {
+                console.error("Save Failed:", e);
+                return false;
             }
         }
 
         async function runGeneration() {
             if (!state.template) return alert("Missing template");
             if (!state.directoryHandle) return alert("Link a folder first");
-            if (state.emailEnabled && (!accessToken || state.auth.expiry < Date.now())) {
-                return alert("Session expired. Please sign in again.");
-            }
+            if (state.emailEnabled && (!accessToken || state.auth.expiry < Date.now())) return alert("Session expired. Please sign in.");
 
+            // 1. Verify Folder Permission Explicitly BEFORE Loop
             try {
                 if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
-                    if (await state.directoryHandle.requestPermission({ mode: 'readwrite' }) !== 'granted') return alert("Folder permission required.");
+                    if (await state.directoryHandle.requestPermission({ mode: 'readwrite' }) !== 'granted') return alert("Folder write permission is required.");
                 }
-            } catch(e) { return alert("Re-link folder."); }
+            } catch(e) { return alert("Please re-link your folder."); }
 
             const overlay = document.getElementById('loading-overlay');
             overlay.classList.replace('hidden', 'flex');
@@ -642,8 +638,8 @@
                     bar.style.width = `${((i+1)/state.dataList.length)*100}%`;
                     txt.textContent = `Processing ${fileName}...`;
 
-                    let data; // Uint8Array
-                    
+                    // Generate Data
+                    let data; 
                     if (fmt === 'pdf') {
                         if (state.template.type === 'pdf') {
                             const doc = await PDFDocument.load(baseBytes.slice(0)); 
@@ -669,39 +665,41 @@
                         data = new Uint8Array(await (await new Promise(r => cvs.toBlob(r, mime))).arrayBuffer());
                     }
 
+                    // Process Logic
+                    let fileSaved = false;
+                    
                     if (state.emailEnabled && row.values['email']) {
                         txt.textContent = `Emailing ${row.values['email']}...`;
-                        if (await sendGmail(row.values['email'], "Your Certificate", "Attached is your document.", data, fileName, mime)) {
+                        const sent = await sendGmail(row.values['email'], "Your Certificate", "Attached is your document.", data, fileName, mime);
+                        
+                        if (sent) {
                             emailed++;
-                            const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
-                            const w = await h.createWritable(); 
-                            await w.write(data); 
-                            await w.close();
-                            saved++;
+                            // Email success -> Auto Save
+                            if (await saveFileToFolder(fileName, data)) {
+                                saved++; fileSaved = true;
+                            }
                         } else {
-                            const userChoice = confirm(`Email failed for ${row.values['email']}. Save file to folder anyway?`);
+                            // Email fail -> Fallback Save
+                            const userChoice = confirm(`Email FAILED for ${row.values['email']}. Save file locally anyway?`);
                             if (userChoice) {
-                                const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
-                                const w = await h.createWritable(); 
-                                await w.write(data); 
-                                await w.close();
-                                saved++;
+                                if (await saveFileToFolder(fileName, data)) {
+                                    saved++; fileSaved = true;
+                                }
                             }
                         }
                     } else {
-                        const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
-                        const w = await h.createWritable(); 
-                        await w.write(data); 
-                        await w.close();
-                        saved++;
+                        // No Email Mode -> Just Save
+                        if (await saveFileToFolder(fileName, data)) {
+                            saved++; fileSaved = true;
+                        }
                     }
                     
                     state.lastBatchStatus = { saved, emailed, date: new Date().toLocaleString() };
                     saveState();
                 }
                 renderBatchStatus();
-                alert("Done!");
-            } catch (e) { console.error(e); alert("Error: " + e.message); } 
+                alert(`Done! Saved: ${saved}, Emailed: ${emailed}`);
+            } catch (e) { console.error(e); alert("Process Error: " + e.message); } 
             finally { overlay.classList.replace('flex', 'hidden'); }
         }
 
