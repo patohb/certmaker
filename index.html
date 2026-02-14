@@ -50,6 +50,13 @@
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float { animation: float 3s ease-in-out infinite; }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen p-2 md:p-6">
@@ -111,13 +118,13 @@
                 </div>
                 <p class="text-[10px] text-slate-500">
                     Origins setting: <span class="text-slate-300 font-mono" id="current-origin"></span><br>
-                    <b>Note:</b> If using a MOH Gov email, ensure the specific account is added as a "Test User" in the Google Cloud Console while the app is in "Testing" mode.
+                    <b>Note:</b> For MOH Gov emails, ensure the account is added as a "Test User" in the Google Cloud Console.
                 </p>
             </div>
         </div>
 
         <main class="flex-1 p-4 md:p-8 overflow-y-auto">
-            <!-- Tab Contents remain as defined -->
+            <!-- Tab contents remain structured as requested -->
             <section id="tab-template" class="tab-content active">
                 <div class="max-w-2xl mx-auto space-y-6">
                     <div id="template-upload-area" class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
@@ -157,8 +164,13 @@
                                 <i data-lucide="plus" class="w-4 h-4"></i>
                             </button>
                         </div>
-                        <div id="placeholders-list" class="space-y-3 max-h-[400px] overflow-y-auto pr-2"></div>
+                        <div id="placeholders-list" class="space-y-3 max-h-[350px] overflow-y-auto pr-2 border-b border-slate-100 pb-2"></div>
                         
+                        <!-- Requested Save Button for Template -->
+                        <button onclick="manualSaveDesign()" id="btn-save-design" class="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-blue-700 transition-colors">
+                            <i data-lucide="save" class="w-4 h-4"></i> Save Design Config
+                        </button>
+
                         <div class="pt-4 border-t border-slate-200 space-y-4">
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Output Format</label>
@@ -192,7 +204,7 @@
                                 <i data-lucide="folder-open" class="w-4 h-4"></i> Link Folder
                             </button>
                             <button onclick="runGeneration()" id="generate-btn" class="bg-slate-900 text-white px-8 py-2 rounded-xl font-bold shadow-xl disabled:opacity-30 flex items-center gap-2">
-                                <i data-lucide="save" class="w-4 h-4"></i> Run Generation
+                                <i data-lucide="zap" class="w-4 h-4"></i> Run Process
                             </button>
                         </div>
                     </div>
@@ -205,7 +217,7 @@
                                     <i data-lucide="trash-2" class="w-3 h-3"></i> Clear All
                                 </button>
                             </div>
-                            <div class="text-[10px] text-slate-400 italic">Tip: Click a cell and press Ctrl+V to paste bulk data</div>
+                            <div class="text-[10px] text-slate-400 italic">Tip: Paste (Ctrl+V) bulk data into any cell</div>
                         </div>
                         <div class="overflow-x-auto max-h-[500px]">
                             <table class="w-full border-collapse table-fixed min-w-[800px]">
@@ -237,12 +249,17 @@
         </main>
     </div>
 
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden items-center justify-center">
-        <div class="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-sm w-full">
-            <div id="loading-spinner" class="w-16 h-16 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4"></div>
+    <!-- Loading Overlay with Floating Status -->
+    <div id="loading-overlay" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 hidden items-center justify-center">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-sm w-full border border-slate-100 relative overflow-hidden">
+            <div id="processing-visual" class="animate-float mb-6 inline-block bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-sm">
+                <i id="status-icon" data-lucide="file-text" class="w-16 h-16 text-emerald-500"></i>
+            </div>
             <h3 id="loading-title" class="text-xl font-black text-slate-900">Processing Batch</h3>
-            <p id="loading-text" class="text-sm text-slate-500 mt-2">Writing files to your folder...</p>
+            <p id="loading-text" class="text-sm text-slate-500 mt-2 font-medium">Preparing certificates...</p>
+            <div class="mt-6 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div id="progress-bar" class="h-full bg-emerald-500 transition-all duration-300 w-0"></div>
+            </div>
         </div>
     </div>
 
@@ -268,7 +285,7 @@
             state.googleClientId = id;
             saveState();
             initGsi();
-            alert("Client ID updated. You can now try signing in.");
+            alert("Client ID updated. You can now sign in.");
         }
 
         function initGsi() {
@@ -281,7 +298,7 @@
                 callback: (resp) => {
                     if (resp.error !== undefined) {
                         console.error("Auth error:", resp);
-                        alert("Authentication failed: " + (resp.error_description || resp.message || "Unknown error. Check Google Console settings."));
+                        alert("Auth Error: " + (resp.error_description || resp.message));
                         return;
                     }
                     accessToken = resp.access_token;
@@ -292,21 +309,13 @@
 
         function handleAuthClick() {
             const clientId = HARDCODED_GOOGLE_CLIENT_ID || state.googleClientId;
-            if (!clientId) {
-                toggleConfig();
-                alert("Please configure your Google Client ID first.");
-                return;
-            }
+            if (!clientId) { toggleConfig(); alert("Set Google Client ID first."); return; }
             if (!tokenClient) initGsi();
             tokenClient.requestAccessToken({ prompt: 'consent' });
         }
 
         function handleSignoutClick() {
-            if (accessToken) {
-                google.accounts.oauth2.revoke(accessToken);
-                accessToken = null;
-                updateAuthUI(false);
-            }
+            if (accessToken) { google.accounts.oauth2.revoke(accessToken); accessToken = null; updateAuthUI(false); }
         }
 
         function updateAuthUI(isLoggedIn) {
@@ -314,7 +323,7 @@
             document.getElementById('user-info').classList.toggle('hidden', !isLoggedIn);
         }
 
-        // --- State ---
+        // --- State Management ---
         let state = {
             activeTab: 'template',
             template: null,
@@ -355,8 +364,7 @@
                         if (state.outputFormat) document.getElementById('output-format-select').value = state.outputFormat;
                         if (state.emailEnabled) document.getElementById('email-toggle').checked = true;
                         if (state.googleClientId) document.getElementById('google-client-id').value = state.googleClientId;
-                        renderAll();
-                        initGsi();
+                        renderAll(); initGsi();
                     }
                     resolve();
                 };
@@ -379,65 +387,28 @@
         }
 
         function renderAll() {
-            renderTemplate();
-            renderPlaceholders();
-            renderDataTable();
+            renderTemplate(); renderPlaceholders(); renderDataTable(); lucide.createIcons();
+        }
+
+        // --- Designer & Save ---
+        async function manualSaveDesign() {
+            await saveState();
+            const btn = document.getElementById('btn-save-design');
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i> Saved Config!';
+            btn.classList.replace('bg-blue-600', 'bg-emerald-600');
             lucide.createIcons();
+            setTimeout(() => {
+                btn.innerHTML = original;
+                btn.classList.replace('bg-emerald-600', 'bg-blue-600');
+                lucide.createIcons();
+            }, 2000);
         }
 
-        // --- Template ---
-        document.getElementById('file-input').addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const isPDF = file.type === 'application/pdf';
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                let preview = '';
-                if (isPDF) {
-                    const pdfData = new Uint8Array(event.target.result);
-                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-                    const pdf = await loadingTask.promise;
-                    const page = await pdf.getPage(1);
-                    const viewport = page.getViewport({ scale: 2.0 });
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
-                    await page.render({ canvasContext: context, viewport: viewport }).promise;
-                    preview = canvas.toDataURL();
-                } else {
-                    preview = event.target.result;
-                }
-                state.template = { type: isPDF ? 'pdf' : 'image', data: event.target.result, name: file.name, preview: preview };
-                renderTemplate();
-                saveState();
-            };
-            if (isPDF) reader.readAsArrayBuffer(file);
-            else reader.readAsDataURL(file);
-        });
-
-        function renderTemplate() {
-            const uploadArea = document.getElementById('template-upload-area');
-            const previewArea = document.getElementById('template-preview-area');
-            const previewContainer = document.getElementById('preview-container');
-            if (state.template) {
-                uploadArea.classList.add('hidden');
-                previewArea.classList.remove('hidden');
-                previewContainer.innerHTML = state.template.preview ? `<img src="${state.template.preview}" class="max-h-64 rounded shadow-sm">` : '';
-            } else {
-                uploadArea.classList.remove('hidden');
-                previewArea.classList.add('hidden');
-            }
-            renderDesignCanvas();
-        }
-
-        function removeTemplate() { state.template = null; renderTemplate(); saveState(); }
-
-        // --- Designer ---
         function renderDesignCanvas() {
             const canvas = document.getElementById('design-canvas');
             canvas.innerHTML = '';
-            if (state.template?.preview) canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full object-contain pointer-events-none select-none">`;
+            if (state.template?.preview) canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full object-contain pointer-events-none select-none shadow-lg">`;
             state.placeholders.forEach(p => {
                 const marker = document.createElement('div');
                 marker.className = 'absolute marker px-2 py-1 bg-white/90 border border-emerald-500 rounded shadow-sm flex items-center whitespace-nowrap z-10';
@@ -489,7 +460,7 @@
 
         function removePlaceholder(id) { state.placeholders = state.placeholders.filter(x => x.id !== id); renderPlaceholders(); renderDesignCanvas(); saveState(); }
 
-        // --- Data Grid ---
+        // --- Spreadsheet Grid ---
         function toggleEmailColumn(enabled) { state.emailEnabled = enabled; renderDataTable(); saveState(); }
         function renderDataTable() {
             const header = document.getElementById('table-header');
@@ -527,9 +498,49 @@
         }
 
         function removeRow(id) { state.dataList = state.dataList.filter(r => r.id !== id); renderDataTable(); saveState(); }
-        function clearDataTable() { if (confirm("Clear all?")) { state.dataList = []; renderDataTable(); saveState(); } }
+        function clearDataTable() { if (confirm("Clear all rows?")) { state.dataList = []; renderDataTable(); saveState(); } }
 
-        // --- Files ---
+        // --- Template Processing ---
+        document.getElementById('file-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const isPDF = file.type === 'application/pdf';
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                let preview = '';
+                if (isPDF) {
+                    const pdfData = new Uint8Array(event.target.result);
+                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                    const pdf = await loadingTask.promise;
+                    const page = await pdf.getPage(1);
+                    const viewport = page.getViewport({ scale: 2.0 });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    preview = canvas.toDataURL();
+                } else { preview = event.target.result; }
+                state.template = { type: isPDF ? 'pdf' : 'image', data: event.target.result, name: file.name, preview: preview };
+                renderTemplate(); saveState();
+            };
+            if (isPDF) reader.readAsArrayBuffer(file); else reader.readAsDataURL(file);
+        });
+
+        function renderTemplate() {
+            const upload = document.getElementById('template-upload-area');
+            const area = document.getElementById('template-preview-area');
+            const cont = document.getElementById('preview-container');
+            if (state.template) {
+                upload.classList.add('hidden'); area.classList.remove('hidden');
+                cont.innerHTML = state.template.preview ? `<img src="${state.template.preview}" class="max-h-64 rounded shadow-md">` : '';
+            } else { upload.classList.remove('hidden'); area.classList.add('hidden'); }
+            renderDesignCanvas();
+        }
+
+        function removeTemplate() { state.template = null; renderTemplate(); saveState(); }
+
+        // --- File System Sync ---
         async function selectDirectory() {
             try {
                 state.directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
@@ -541,9 +552,11 @@
         }
 
         async function viewLocalFile(name) {
-            const handle = await state.directoryHandle.getFileHandle(name);
-            const file = await handle.getFile();
-            window.open(URL.createObjectURL(file), '_blank');
+            try {
+                const handle = await state.directoryHandle.getFileHandle(name);
+                const file = await handle.getFile();
+                window.open(URL.createObjectURL(file), '_blank');
+            } catch (e) { alert("Failed to open. Grant folder permissions."); }
         }
 
         async function scanDirectory() {
@@ -562,7 +575,7 @@
             lucide.createIcons();
         }
 
-        // --- Processing & Gmail ---
+        // --- Generation & Email Helper ---
         function arrayBufferToBase64(buffer) {
             let binary = '';
             const bytes = new Uint8Array(buffer);
@@ -571,37 +584,60 @@
         }
 
         async function sendGmail(recipient, subject, body, attachmentData, fileName, mimeType) {
-            const boundary = "foo_bar_baz";
-            const message = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--${boundary}`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", arrayBufferToBase64(attachmentData), "", `--${boundary}--`].join("\r\n");
-            const raw = btoa(unescape(encodeURIComponent(message))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-            const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw }) });
-            return resp.ok;
+            try {
+                const boundary = "foo_bar_baz";
+                const message = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--${boundary}`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", arrayBufferToBase64(attachmentData), "", `--${boundary}--`].join("\r\n");
+                const raw = btoa(unescape(encodeURIComponent(message))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+                const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw }) });
+                return resp.ok;
+            } catch (e) { console.error(e); return false; }
         }
 
         async function runGeneration() {
-            if (!state.template || !state.directoryHandle) return alert("Missing template or folder");
-            if (state.emailEnabled && !accessToken) return alert("Please sign in");
+            if (!state.template || !state.directoryHandle) return alert("Missing template or linked folder");
+            if (state.emailEnabled && !accessToken) return alert("Sign in to Google first.");
+            
             document.getElementById('loading-overlay').classList.replace('hidden', 'flex');
+            const loadingText = document.getElementById('loading-text');
+            const progressBar = document.getElementById('progress-bar');
+            const statusIcon = document.getElementById('status-icon');
+
             try {
                 const { jsPDF } = window.jspdf;
                 const { PDFDocument, rgb } = window.PDFLib;
                 const fmt = state.outputFormat;
-                let successCount = 0;
-                for (const row of state.dataList) {
-                    let data;
-                    const name = (row.values[state.placeholders[0].id] || 'Unnamed').replace(/[^a-z0-9]/gi, '_');
+                
+                let successEmailCount = 0;
+                let successSavedCount = 0;
+
+                for (let i = 0; i < state.dataList.length; i++) {
+                    const row = state.dataList[i];
+                    const recipientName = (row.values[state.placeholders[0].id] || 'Unnamed');
+                    const safeName = recipientName.replace(/[^a-z0-9]/gi, '_');
                     const ext = fmt === 'pdf' ? 'pdf' : (fmt === 'png' ? 'png' : 'jpg');
                     const mime = fmt === 'pdf' ? 'application/pdf' : (fmt === 'png' ? 'image/png' : 'image/jpeg');
-                    
+                    const fileName = `${safeName}.${ext}`;
+
+                    progressBar.style.width = `${((i) / state.dataList.length) * 100}%`;
+                    loadingText.textContent = `Generating ${fileName}...`;
+                    statusIcon.className = "w-16 h-16 text-emerald-500";
+                    lucide.createIcons();
+
+                    let data;
                     if (fmt === 'pdf') {
                         if (state.template.type === 'pdf') {
-                            // FIX: Using .slice(0) to create a copy of the buffer so it doesn't get detached
+                            // FIX: Using .slice(0) to prevent the "detached ArrayBuffer" error in the loop
                             const doc = await PDFDocument.load(state.template.data.slice(0));
                             const page = doc.getPages()[0];
                             const { width, height } = page.getSize();
                             state.placeholders.forEach(p => {
                                 const hex = p.color.replace('#', '');
-                                page.drawText(row.values[p.id] || '', { x: (p.x / 297) * width, y: height - ((p.y / 210) * height), size: p.fontSize * 1.5, color: rgb(parseInt(hex.substring(0,2),16)/255, parseInt(hex.substring(2,4),16)/255, parseInt(hex.substring(4,6),16)/255) });
+                                page.drawText(row.values[p.id] || '', { 
+                                    x: (p.x / 297) * width, 
+                                    y: height - ((p.y / 210) * height), 
+                                    size: p.fontSize * 1.5, 
+                                    color: rgb(parseInt(hex.substring(0,2),16)/255, parseInt(hex.substring(2,4),16)/255, parseInt(hex.substring(4,6),16)/255) 
+                                });
                             });
                             data = await doc.save();
                         } else {
@@ -618,15 +654,33 @@
                         state.placeholders.forEach(p => { ctx.fillStyle = p.color; ctx.font = `${p.fontSize * 4}px Inter`; ctx.textAlign = 'center'; ctx.fillText(row.values[p.id] || '', (p.x/297)*1188, (p.y/210)*840); });
                         data = await (await new Promise(res => canvas.toBlob(res, mime))).arrayBuffer();
                     }
-                    const handle = await state.directoryHandle.getFileHandle(`${name}.${ext}`, { create: true });
-                    const wr = await handle.createWritable(); await wr.write(data); await wr.close();
+
+                    // Email Flow
                     if (state.emailEnabled && row.values['email']) {
-                        if (await sendGmail(row.values['email'], "Your Certificate", "Attached is your certificate.", data, `${name}.${ext}`, mime)) successCount++;
+                        loadingText.textContent = `📧 Sending to ${row.values['email']}...`;
+                        const sent = await sendGmail(row.values['email'], "Your Certificate", "Hello! Please find your generated certificate attached.", data, fileName, mime);
+                        if (sent) {
+                            successEmailCount++;
+                            // Only save to folder if email sent successfully as requested
+                            loadingText.textContent = `✅ Email sent! Saving to local folder...`;
+                            const handle = await state.directoryHandle.getFileHandle(fileName, { create: true });
+                            const wr = await handle.createWritable(); await wr.write(data); await wr.close();
+                            successSavedCount++;
+                        } else {
+                            loadingText.textContent = `❌ Email failed for ${row.values['email']}. Skipping file save.`;
+                        }
+                    } else {
+                        // Direct save if no email
+                        loadingText.textContent = `💾 Saving ${fileName} directly...`;
+                        const handle = await state.directoryHandle.getFileHandle(fileName, { create: true });
+                        const wr = await handle.createWritable(); await wr.write(data); await wr.close();
+                        successSavedCount++;
                     }
                 }
-                if (state.emailEnabled) alert(`Sent ${successCount} emails.`);
+                progressBar.style.width = '100%';
+                alert(`Finished! Saved: ${successSavedCount}. Emails: ${successEmailCount}.`);
                 switchTab('gallery');
-            } catch (err) { console.error(err); alert(err.message); } finally { document.getElementById('loading-overlay').classList.replace('hidden', 'flex'); }
+            } catch (err) { console.error(err); alert("Processing Error: " + err.message); } finally { document.getElementById('loading-overlay').classList.replace('flex', 'hidden'); }
         }
 
         window.onload = loadState;
