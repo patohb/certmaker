@@ -488,7 +488,8 @@
         function renderDesignCanvas() {
             const canvas = document.getElementById('design-canvas');
             canvas.innerHTML = '';
-            if (state.template?.preview) canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full object-contain pointer-events-none select-none shadow-lg">`;
+            // FIX: Removed object-contain to force stretch (fill), ensuring WYSIWYG
+            if (state.template?.preview) canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full pointer-events-none select-none shadow-lg">`;
             else canvas.innerHTML = `<p class="text-slate-300" data-lang="uploadHint">${translations[currentLang].uploadHint}</p>`;
             
             state.placeholders.forEach(p => {
@@ -678,7 +679,14 @@
                             await w.close();
                             saved++;
                         } else {
-                            console.warn(`Skipped saving ${fileName} because email failed.`);
+                            const userChoice = confirm(`Email failed for ${row.values['email']}. Save file to folder anyway?`);
+                            if (userChoice) {
+                                const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
+                                const w = await h.createWritable(); 
+                                await w.write(data); 
+                                await w.close();
+                                saved++;
+                            }
                         }
                     } else {
                         const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
