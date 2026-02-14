@@ -232,7 +232,7 @@
             auth: { token: null, expiry: 0 }
         };
 
-        const DB_NAME = 'CertifyLocalDB_v9'; 
+        const DB_NAME = 'CertifyLocalDB_v10'; // Bumped for Clean Slate
         const STORE_NAME = 'AppState';
 
         const translations = {
@@ -270,7 +270,6 @@
             try {
                 const db = await initDB();
                 const tx = db.transaction(STORE_NAME, 'readwrite');
-                // Ensure we never save unserializable objects like dragInfo
                 const { dragInfo, ...toSave } = state; 
                 tx.objectStore(STORE_NAME).put(toSave, 'current');
             } catch (e) { console.warn("State save failed", e); }
@@ -361,7 +360,6 @@
             const btn = document.getElementById('folder-btn');
             const status = document.getElementById('connection-status');
             const statusText = status.querySelector('span');
-            
             if (connected) {
                 btn.classList.replace('bg-amber-50', 'bg-emerald-50');
                 btn.classList.replace('text-amber-600', 'text-emerald-600');
@@ -393,7 +391,6 @@
             state.activeTab = tabId;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.getElementById(`tab-${tabId}`).classList.add('active');
-            
             document.querySelectorAll('.nav-btn').forEach(btn => {
                 btn.classList.remove('bg-white', 'text-slate-900', 'shadow-xl');
                 btn.classList.add('text-slate-400', 'hover:text-white');
@@ -411,9 +408,14 @@
 
         // --- Logic: Template ---
         function arrayBufferToBase64(buffer) {
-            let binary = ''; const bytes = new Uint8Array(buffer);
-            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-            return window.btoa(binary);
+            // Safe conversion using blob to avoid call stack size exceeded for large files
+            return new Promise((resolve, reject) => {
+                const blob = new Blob([buffer]);
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
         }
         function base64ToUint8Array(base64) {
             const binaryString = window.atob(base64);
@@ -429,8 +431,7 @@
             const isPDF = file.type === 'application/pdf';
             const reader = new FileReader();
             
-            // FIX: Use readAsDataURL to safely handle large files without crashing
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(file); // Use DataURL for everything initialy
             
             reader.onload = async (event) => {
                 try {
@@ -438,11 +439,8 @@
                     let preview = '', dataStr = '';
                     
                     if (isPDF) {
-                        // Extract base64 part
                         const base64 = dataUrl.split(',')[1];
-                        dataStr = dataUrl; // Store full Data URL for consistency
-                        
-                        // Create preview
+                        dataStr = dataUrl; 
                         const pdfData = base64ToUint8Array(base64);
                         const task = pdfjsLib.getDocument({ data: pdfData });
                         const p = await task.promise;
@@ -575,24 +573,36 @@
 
         async function sendGmail(recipient, subject, body, attachmentData, fileName, mimeType) {
             try {
-                const b64 = arrayBufferToBase64(attachmentData);
+                // Async safe conversion for large files
+                const b64 = await arrayBufferToBase64(attachmentData);
                 const msg = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="foo_bar_baz"`, "", `--foo_bar_baz`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--foo_bar_baz`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", b64, "", `--foo_bar_baz--`].join("\r\n");
+                
                 const raw = window.btoa(unescape(encodeURIComponent(msg))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
                 const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { 
                     method: 'POST', 
                     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, 
                     body: JSON.stringify({ raw }) 
                 });
-                return res.ok;
-            } catch (e) { console.error(e); return false; }
+                
+                if (!res.ok) {
+                    const errBody = await res.json();
+                    console.error("Gmail Error:", errBody);
+                    throw new Error(errBody.error?.message || "Email failed");
+                }
+                return true;
+            } catch (e) { 
+                console.error("Email Exception:", e); 
+                return false; 
+            }
         }
 
         async function runGeneration() {
             if (!state.template) return alert("Missing template");
             if (!state.directoryHandle) return alert("Link a folder first");
-            if (state.emailEnabled && !accessToken) return alert("Sign in first");
+            if (state.emailEnabled && (!accessToken || state.auth.expiry < Date.now())) {
+                return alert("Session expired. Please sign in again.");
+            }
 
-            // Check folder permissions first
             try {
                 if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
                     if (await state.directoryHandle.requestPermission({ mode: 'readwrite' }) !== 'granted') return alert("Folder permission required.");
@@ -610,10 +620,9 @@
                 const fmt = state.outputFormat;
                 let saved = 0, emailed = 0;
                 
-                // Decode base64 stored in state.template.data if it's PDF, else use it as img src
+                // Optimized pre-load logic
                 let baseBytes = null;
                 if (state.template.type === 'pdf') {
-                    // Extract base64 from Data URL
                     const b64 = state.template.data.split(',')[1];
                     baseBytes = base64ToUint8Array(b64);
                 }
@@ -628,22 +637,24 @@
                     bar.style.width = `${((i+1)/state.dataList.length)*100}%`;
                     txt.textContent = `Processing ${fileName}...`;
 
-                    let data;
+                    let data; // Should be Uint8Array or ArrayBuffer
+                    
                     if (fmt === 'pdf') {
                         if (state.template.type === 'pdf') {
-                            const doc = await PDFDocument.load(baseBytes.slice(0)); // Clone bytes!
+                            // Slice buffer to prevent detachment
+                            const doc = await PDFDocument.load(baseBytes.slice(0)); 
                             const p = doc.getPages()[0];
                             const { width, height } = p.getSize();
                             state.placeholders.forEach(pl => {
                                 const h = pl.color.replace('#','');
                                 p.drawText(row.values[pl.id]||'', { x: (pl.x/297)*width, y: height-((pl.y/210)*height), size: pl.fontSize*1.5, color: rgb(parseInt(h.substring(0,2),16)/255, parseInt(h.substring(2,4),16)/255, parseInt(h.substring(4,6),16)/255) });
                             });
-                            data = (await doc.save()).buffer;
+                            data = await doc.save(); // Returns Uint8Array
                         } else {
                             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
                             doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210);
                             state.placeholders.forEach(pl => { doc.setFontSize(pl.fontSize); doc.setTextColor(pl.color); doc.text(row.values[pl.id]||'', pl.x-(doc.getTextWidth(row.values[pl.id]||'')/2), pl.y); });
-                            data = doc.output('arraybuffer');
+                            data = new Uint8Array(doc.output('arraybuffer'));
                         }
                     } else {
                         const cvs = document.createElement('canvas'); const cx = cvs.getContext('2d');
@@ -651,20 +662,29 @@
                         await new Promise(r => { img.onload = r; img.src = state.template.preview; });
                         cx.drawImage(img, 0, 0, 1188, 840);
                         state.placeholders.forEach(pl => { cx.fillStyle = pl.color; cx.font = `${pl.fontSize*4}px Inter`; cx.textAlign = 'center'; cx.fillText(row.values[pl.id]||'', (pl.x/297)*1188, (pl.y/210)*840); });
-                        data = await (await new Promise(r => cvs.toBlob(r, mime))).arrayBuffer();
+                        data = new Uint8Array(await (await new Promise(r => cvs.toBlob(r, mime))).arrayBuffer());
                     }
 
                     if (state.emailEnabled && row.values['email']) {
                         txt.textContent = `Emailing ${row.values['email']}...`;
+                        // Send data buffer directly
                         if (await sendGmail(row.values['email'], "Your Certificate", "Attached is your document.", data, fileName, mime)) {
                             emailed++;
                             const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
-                            const w = await h.createWritable(); await w.write(data); await w.close();
+                            const w = await h.createWritable(); 
+                            await w.write(data); 
+                            await w.close();
                             saved++;
+                        } else {
+                            // Logic: User requested ONLY upload if email sent. 
+                            // So we do NOT save here.
+                            console.warn(`Skipped saving ${fileName} because email failed.`);
                         }
                     } else {
                         const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
-                        const w = await h.createWritable(); await w.write(data); await w.close();
+                        const w = await h.createWritable(); 
+                        await w.write(data); 
+                        await w.close();
                         saved++;
                     }
                     
