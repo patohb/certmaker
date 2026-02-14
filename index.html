@@ -10,7 +10,7 @@
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <!-- Google Identity Services -->
-    <script src="https://accounts.google.com/gsi/client" onload="initGsi()" async defer></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
         body { font-family: 'Inter', sans-serif; }
@@ -87,15 +87,35 @@
             <!-- Google Login Section -->
             <div id="auth-section" class="flex items-center gap-2 bg-slate-800 rounded-xl px-3 py-1.5 ml-2">
                 <button id="btn-login" onclick="handleAuthClick()" class="text-xs font-bold text-slate-300 hover:text-white flex items-center gap-2">
-                    <i data-lucide="log-in" class="w-4 h-4"></i> Sign in with Google
+                    <i data-lucide="log-in" class="w-4 h-4"></i> Sign in
                 </button>
                 <div id="user-info" class="hidden items-center gap-2">
                     <div id="user-avatar" class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-[10px] font-bold">U</div>
-                    <span id="user-email" class="text-[10px] text-slate-400 max-w-[100px] truncate"></span>
+                    <span id="user-email" class="text-[10px] text-slate-400 max-w-[100px] truncate">Authenticated</span>
                     <button onclick="handleSignoutClick()" class="text-slate-500 hover:text-red-400"><i data-lucide="log-out" class="w-3 h-3"></i></button>
                 </div>
+                <button onclick="toggleConfig()" class="text-slate-500 hover:text-white ml-1"><i data-lucide="settings" class="w-4 h-4"></i></button>
             </div>
         </header>
+
+        <!-- Config Modal -->
+        <div id="config-panel" class="hidden bg-slate-800 border-b border-slate-700 p-4 text-white">
+            <div class="max-w-2xl mx-auto flex flex-col gap-3">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-xs font-black uppercase tracking-widest text-slate-400">Google Cloud Configuration</h3>
+                    <button onclick="toggleConfig()" class="text-slate-500 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" id="google-client-id" placeholder="Paste Google Client ID here..." class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-emerald-500">
+                    <button onclick="updateClientId()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-xs font-bold transition-colors">Save ID</button>
+                </div>
+                <p class="text-[10px] text-slate-500">
+                    1. Go to <a href="https://console.cloud.google.com/" target="_blank" class="text-blue-400 underline">Google Cloud Console</a>.<br>
+                    2. Create OAuth 2.0 Client ID for "Web Application".<br>
+                    3. Add <span class="text-slate-300 font-mono" id="current-origin"></span> to "Authorized JavaScript origins".
+                </p>
+            </div>
+        </div>
 
         <main class="flex-1 p-4 md:p-8 overflow-y-auto">
             <!-- Tab: Template -->
@@ -211,9 +231,6 @@
                         <button onclick="addManualRow()" class="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-bold text-sm hover:bg-emerald-100 transition-colors">
                             <i data-lucide="plus" class="w-4 h-4"></i> Add Empty Row
                         </button>
-                        <button onclick="addEmailColumn()" id="btn-add-email-col" class="hidden flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-100 transition-colors">
-                            <i data-lucide="mail-plus" class="w-4 h-4"></i> Add Email Column
-                        </button>
                     </div>
                 </div>
             </section>
@@ -248,31 +265,35 @@
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        // --- Auth Config ---
-        const CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com'; // User needs to provide this or it's injected
+        // --- HARDCODED CLIENT ID ---
+        const HARDCODED_GOOGLE_CLIENT_ID = '939971084257-icn512k0in8ohsmbphr3i1uhbp1k1os4.apps.googleusercontent.com'; 
+
+        // --- Auth Configuration ---
         const SCOPES = 'https://www.googleapis.com/auth/gmail.send';
         let tokenClient;
         let accessToken = null;
 
-        // --- State ---
-        let state = {
-            activeTab: 'template',
-            template: null,
-            placeholders: [{ id: '1', name: 'Recipient Name', x: 148, y: 100, fontSize: 30, color: '#000000', bold: true }],
-            dataList: [{ id: 'init', values: { '1': 'John Doe', 'email': '' } }],
-            directoryHandle: null,
-            dragInfo: null,
-            outputFormat: 'pdf',
-            emailEnabled: false
-        };
+        function toggleConfig() {
+            const panel = document.getElementById('config-panel');
+            panel.classList.toggle('hidden');
+            document.getElementById('current-origin').textContent = window.location.origin;
+        }
 
-        const DB_NAME = 'CertifyLocalDB_v3';
-        const STORE_NAME = 'AppState';
+        function updateClientId() {
+            const id = document.getElementById('google-client-id').value.trim();
+            if (!id) return alert("Please enter a valid Client ID");
+            state.googleClientId = id;
+            saveState();
+            initGsi();
+            alert("Client ID updated. You can now try signing in.");
+        }
 
-        // --- GSI Initialization ---
         function initGsi() {
+            const clientId = HARDCODED_GOOGLE_CLIENT_ID || state.googleClientId;
+            if (!clientId || typeof google === 'undefined') return;
+            
             tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: CLIENT_ID,
+                client_id: clientId,
                 scope: SCOPES,
                 callback: (resp) => {
                     if (resp.error !== undefined) throw resp;
@@ -283,30 +304,44 @@
         }
 
         function handleAuthClick() {
+            const clientId = HARDCODED_GOOGLE_CLIENT_ID || state.googleClientId;
+            if (!clientId) {
+                toggleConfig();
+                alert("Please configure your Google Client ID first (click settings gear).");
+                return;
+            }
+            if (!tokenClient) initGsi();
             tokenClient.requestAccessToken({ prompt: 'consent' });
         }
 
         function handleSignoutClick() {
-            const token = accessToken;
-            if (token !== null) {
-                google.accounts.oauth2.revoke(token);
+            if (accessToken) {
+                google.accounts.oauth2.revoke(accessToken);
                 accessToken = null;
                 updateAuthUI(false);
             }
         }
 
         function updateAuthUI(isLoggedIn) {
-            const loginBtn = document.getElementById('btn-login');
-            const userInfo = document.getElementById('user-info');
-            if (isLoggedIn) {
-                loginBtn.classList.add('hidden');
-                userInfo.classList.remove('hidden');
-                document.getElementById('user-email').textContent = "Authenticated";
-            } else {
-                loginBtn.classList.remove('hidden');
-                userInfo.classList.add('hidden');
-            }
+            document.getElementById('btn-login').classList.toggle('hidden', isLoggedIn);
+            document.getElementById('user-info').classList.toggle('hidden', !isLoggedIn);
         }
+
+        // --- State ---
+        let state = {
+            activeTab: 'template',
+            template: null,
+            placeholders: [{ id: '1', name: 'Recipient Name', x: 148, y: 100, fontSize: 30, color: '#000000', bold: true }],
+            dataList: [{ id: 'init', values: { '1': 'John Doe', 'email': '' } }],
+            directoryHandle: null,
+            dragInfo: null,
+            outputFormat: 'pdf',
+            emailEnabled: false,
+            googleClientId: ''
+        };
+
+        const DB_NAME = 'CertifyLocalDB_v3';
+        const STORE_NAME = 'AppState';
 
         async function initDB() {
             return new Promise((resolve) => {
@@ -332,7 +367,9 @@
                         state = { ...state, ...request.result };
                         if (state.outputFormat) document.getElementById('output-format-select').value = state.outputFormat;
                         if (state.emailEnabled) document.getElementById('email-toggle').checked = true;
+                        if (state.googleClientId) document.getElementById('google-client-id').value = state.googleClientId;
                         renderAll();
+                        initGsi();
                     }
                     resolve();
                 };
@@ -363,46 +400,33 @@
             lucide.createIcons();
         }
 
-        // --- Template Handlers ---
+        // --- Template Logic ---
         document.getElementById('file-input').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-
             const isPDF = file.type === 'application/pdf';
             const reader = new FileReader();
-            
             reader.onload = async (event) => {
                 let preview = '';
                 if (isPDF) {
-                    try {
-                        const pdfData = new Uint8Array(event.target.result);
-                        const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-                        const pdf = await loadingTask.promise;
-                        const page = await pdf.getPage(1);
-                        const viewport = page.getViewport({ scale: 2.0 });
-                        const canvas = document.createElement('canvas');
-                        const context = canvas.getContext('2d');
-                        canvas.height = viewport.height;
-                        canvas.width = viewport.width;
-                        await page.render({ canvasContext: context, viewport: viewport }).promise;
-                        preview = canvas.toDataURL();
-                    } catch (err) {
-                        console.error("PDF preview generation failed:", err);
-                    }
+                    const pdfData = new Uint8Array(event.target.result);
+                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                    const pdf = await loadingTask.promise;
+                    const page = await pdf.getPage(1);
+                    const viewport = page.getViewport({ scale: 2.0 });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    preview = canvas.toDataURL();
                 } else {
                     preview = event.target.result;
                 }
-
-                state.template = { 
-                    type: isPDF ? 'pdf' : 'image', 
-                    data: event.target.result, 
-                    name: file.name,
-                    preview: preview 
-                };
+                state.template = { type: isPDF ? 'pdf' : 'image', data: event.target.result, name: file.name, preview: preview };
                 renderTemplate();
                 saveState();
             };
-
             if (isPDF) reader.readAsArrayBuffer(file);
             else reader.readAsDataURL(file);
         });
@@ -411,14 +435,10 @@
             const uploadArea = document.getElementById('template-upload-area');
             const previewArea = document.getElementById('template-preview-area');
             const previewContainer = document.getElementById('preview-container');
-
             if (state.template) {
                 uploadArea.classList.add('hidden');
                 previewArea.classList.remove('hidden');
-                previewContainer.innerHTML = state.template.preview 
-                    ? `<img src="${state.template.preview}" class="max-h-64 rounded shadow-sm">`
-                    : `<div class="p-8 flex flex-col items-center"><i data-lucide="file-text" class="w-12 h-12 text-emerald-500 mb-2"></i><span class="text-xs font-bold">${state.template.name}</span></div>`;
-                lucide.createIcons();
+                previewContainer.innerHTML = state.template.preview ? `<img src="${state.template.preview}" class="max-h-64 rounded shadow-sm">` : '';
             } else {
                 uploadArea.classList.remove('hidden');
                 previewArea.classList.add('hidden');
@@ -432,16 +452,13 @@
             saveState();
         }
 
+        // --- Design Logic ---
         function renderDesignCanvas() {
             const canvas = document.getElementById('design-canvas');
             canvas.innerHTML = '';
-            
             if (state.template?.preview) {
                 canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full object-contain pointer-events-none select-none">`;
-            } else if (!state.template) {
-                canvas.innerHTML = `<p class="text-slate-300">Upload a template to begin</p>`;
             }
-
             state.placeholders.forEach(p => {
                 const marker = document.createElement('div');
                 marker.className = 'absolute marker px-2 py-1 bg-white/90 border border-emerald-500 rounded shadow-sm flex items-center whitespace-nowrap z-10';
@@ -450,60 +467,21 @@
                 marker.style.transform = 'translate(-50%, -50%)';
                 marker.style.fontSize = `${p.fontSize * 0.7}px`;
                 marker.style.color = p.color;
-                marker.style.fontWeight = p.bold ? 'bold' : 'normal';
                 marker.innerHTML = `<span class="text-[9px] bg-emerald-500 text-white px-1 absolute -top-4 left-0 rounded-sm">Drag</span>${p.name}`;
-                marker.onmousedown = (e) => startDrag(e, p.id);
+                marker.onmousedown = (e) => {
+                    state.dragInfo = { id: p.id, startX: e.clientX, startY: e.clientY, origX: p.x, origY: p.y };
+                    window.onmousemove = (me) => {
+                        const rect = document.getElementById('canvas-wrapper').getBoundingClientRect();
+                        const dx = ((me.clientX - state.dragInfo.startX) / rect.width) * 297;
+                        const dy = ((me.clientY - state.dragInfo.startY) / rect.height) * 210;
+                        p.x = Math.max(0, Math.min(297, Math.round(state.dragInfo.origX + dx)));
+                        p.y = Math.max(0, Math.min(210, Math.round(state.dragInfo.origY + dy)));
+                        renderDesignCanvas();
+                    };
+                    window.onmouseup = () => { window.onmousemove = null; saveState(); };
+                };
                 canvas.appendChild(marker);
             });
-        }
-
-        function startDrag(e, id) {
-            const p = state.placeholders.find(x => x.id === id);
-            state.dragInfo = { id, startX: e.clientX, startY: e.clientY, origX: p.x, origY: p.y };
-            window.onmousemove = drag;
-            window.onmouseup = endDrag;
-        }
-
-        function drag(e) {
-            if (!state.dragInfo) return;
-            const rect = document.getElementById('canvas-wrapper').getBoundingClientRect();
-            const dx = ((e.clientX - state.dragInfo.startX) / rect.width) * 297;
-            const dy = ((e.clientY - state.dragInfo.startY) / rect.height) * 210;
-            const p = state.placeholders.find(x => x.id === state.dragInfo.id);
-            p.x = Math.max(0, Math.min(297, Math.round(state.dragInfo.origX + dx)));
-            p.y = Math.max(0, Math.min(210, Math.round(state.dragInfo.origY + dy)));
-            renderDesignCanvas();
-        }
-
-        function endDrag() {
-            state.dragInfo = null;
-            window.onmousemove = null;
-            saveState();
-        }
-
-        function renderPlaceholders() {
-            const list = document.getElementById('placeholders-list');
-            list.innerHTML = '';
-            state.placeholders.forEach(p => {
-                const card = document.createElement('div');
-                card.className = 'p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 relative group';
-                card.innerHTML = `
-                    <button onclick="removePlaceholder('${p.id}')" class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
-                    <input value="${p.name}" oninput="updatePlaceholder('${p.id}', 'name', this.value)" class="w-full bg-transparent font-bold text-sm border-b border-slate-200 focus:border-emerald-500 outline-none pb-1">
-                    <div class="grid grid-cols-2 gap-2">
-                        <div>
-                            <label class="text-[10px] font-black text-slate-400 uppercase">Size</label>
-                            <input type="number" value="${p.fontSize}" oninput="updatePlaceholder('${p.id}', 'fontSize', parseInt(this.value))" class="w-full text-xs bg-white rounded border p-1">
-                        </div>
-                        <div>
-                            <label class="text-[10px] font-black text-slate-400 uppercase">Color</label>
-                            <input type="color" value="${p.color}" oninput="updatePlaceholder('${p.id}', 'color', this.value)" class="w-full h-6 rounded cursor-pointer">
-                        </div>
-                    </div>
-                `;
-                list.appendChild(card);
-            });
-            lucide.createIcons();
         }
 
         function addPlaceholder() {
@@ -514,11 +492,23 @@
             saveState();
         }
 
-        function updatePlaceholder(id, field, value) {
-            const p = state.placeholders.find(x => x.id === id);
-            p[field] = value;
-            renderDesignCanvas();
-            saveState();
+        function renderPlaceholders() {
+            const list = document.getElementById('placeholders-list');
+            list.innerHTML = '';
+            state.placeholders.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 relative group';
+                card.innerHTML = `
+                    <button onclick="removePlaceholder('${p.id}')" class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+                    <input value="${p.name}" oninput="state.placeholders.find(x=>x.id==='${p.id}').name=this.value; renderDataTable(); saveState();" class="w-full bg-transparent font-bold text-sm border-b border-slate-200 outline-none pb-1">
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="number" value="${p.fontSize}" oninput="state.placeholders.find(x=>x.id==='${p.id}').fontSize=parseInt(this.value); renderDesignCanvas(); saveState();" class="text-xs border p-1 rounded">
+                        <input type="color" value="${p.color}" oninput="state.placeholders.find(x=>x.id==='${p.id}').color=this.value; renderDesignCanvas(); saveState();" class="w-full h-6 rounded cursor-pointer">
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+            lucide.createIcons();
         }
 
         function removePlaceholder(id) {
@@ -528,95 +518,36 @@
             saveState();
         }
 
-        // --- Spreadsheet Grid Logic ---
-        function toggleEmailColumn(enabled) {
-            state.emailEnabled = enabled;
-            renderDataTable();
-            saveState();
-        }
-
+        // --- Spreadsheet Grid ---
+        function toggleEmailColumn(enabled) { state.emailEnabled = enabled; renderDataTable(); saveState(); }
         function renderDataTable() {
             const header = document.getElementById('table-header');
-            const rowCountEl = document.getElementById('row-count');
-            
-            header.innerHTML = `
-                <tr>
-                    <th class="grid-header w-12 text-center">#</th>
-                    ${state.placeholders.map(p => `<th class="grid-header">${p.name}</th>`).join('')}
-                    ${state.emailEnabled ? `<th class="grid-header w-64 bg-blue-50 text-blue-600">Recipient Email</th>` : ''}
-                    <th class="grid-header w-12"></th>
-                </tr>
-            `;
-
+            header.innerHTML = `<tr><th class="grid-header w-12 text-center">#</th>${state.placeholders.map(p => `<th class="grid-header">${p.name}</th>`).join('')}${state.emailEnabled ? `<th class="grid-header w-64 bg-blue-50 text-blue-600">Recipient Email</th>` : ''}<th class="grid-header w-12"></th></tr>`;
             const body = document.getElementById('data-table-body');
             body.innerHTML = '';
-            
             state.dataList.forEach((row, idx) => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td class="grid-cell text-center bg-slate-50 text-[10px] font-mono text-slate-400 border-r border-slate-200">${idx + 1}</td>
-                    ${state.placeholders.map(p => `
-                        <td class="grid-cell">
-                            <input type="text" class="grid-input" value="${row.values[p.id] || ''}" oninput="updateCellValue('${row.id}', '${p.id}', this.value)" onpaste="handleGridPaste(event)">
-                        </td>
-                    `).join('')}
-                    ${state.emailEnabled ? `
-                        <td class="grid-cell bg-blue-50/20">
-                            <input type="email" class="grid-input font-bold text-blue-600" value="${row.values['email'] || ''}" oninput="updateCellValue('${row.id}', 'email', this.value)" onpaste="handleGridPaste(event)" placeholder="user@example.com">
-                        </td>
-                    ` : ''}
-                    <td class="grid-cell text-center">
-                        <button onclick="removeRow('${row.id}')" class="text-slate-300 hover:text-red-500 transition-colors p-2"><i data-lucide="x" class="w-3 h-3"></i></button>
-                    </td>
-                `;
+                tr.innerHTML = `<td class="grid-cell text-center bg-slate-50 text-[10px] font-mono text-slate-400 border-r border-slate-200">${idx+1}</td>${state.placeholders.map(p => `<td class="grid-cell"><input type="text" class="grid-input" value="${row.values[p.id]||''}" oninput="state.dataList.find(r=>r.id==='${row.id}').values['${p.id}']=this.value; saveState();" onpaste="handleGridPaste(event)"></td>`).join('')}${state.emailEnabled ? `<td class="grid-cell bg-blue-50/20"><input type="email" class="grid-input font-bold text-blue-600" value="${row.values['email']||''}" oninput="state.dataList.find(r=>r.id==='${row.id}').values['email']=this.value; saveState();" onpaste="handleGridPaste(event)"></td>` : ''}<td class="grid-cell text-center"><button onclick="removeRow('${row.id}')" class="text-slate-300 hover:text-red-500 p-2"><i data-lucide="x" class="w-3 h-3"></i></button></td>`;
                 body.appendChild(tr);
             });
-            
-            rowCountEl.textContent = `${state.dataList.length} Rows`;
+            document.getElementById('row-count').textContent = `${state.dataList.length} Rows`;
             lucide.createIcons();
-        }
-
-        function updateCellValue(rowId, fieldId, value) {
-            const row = state.dataList.find(r => r.id === rowId);
-            if (row) {
-                row.values[fieldId] = value;
-                saveState();
-            }
         }
 
         function handleGridPaste(e) {
             e.preventDefault();
-            const pasteData = e.clipboardData.getData('text');
-            const lines = pasteData.split(/\r?\n/).filter(line => line.trim() !== '');
-            
+            const lines = e.clipboardData.getData('text').split(/\r?\n/).filter(l => l.trim() !== '');
             if (lines.length > 1 || lines[0].includes('\t')) {
-                const newDataList = lines.map(line => {
+                state.dataList = lines.map(line => {
                     const cells = line.split('\t');
                     const values = {};
-                    state.placeholders.forEach((p, i) => {
-                        values[p.id] = cells[i] || '';
-                    });
-                    if (state.emailEnabled) {
-                        // Email is always the last column if enabled
-                        values['email'] = cells[state.placeholders.length] || '';
-                    }
+                    state.placeholders.forEach((p, i) => values[p.id] = cells[i] || '');
+                    if (state.emailEnabled) values['email'] = cells[state.placeholders.length] || '';
                     return { id: Math.random().toString(36).substr(2, 9), values };
                 });
-                state.dataList = newDataList;
                 renderDataTable();
                 saveState();
-            } else {
-                e.target.value = pasteData;
-                e.target.dispatchEvent(new Event('input'));
-            }
-        }
-
-        function clearDataTable() {
-            if (confirm("Clear all rows in the grid?")) {
-                state.dataList = [];
-                renderDataTable();
-                saveState();
-            }
+            } else { e.target.value = lines[0]; e.target.dispatchEvent(new Event('input')); }
         }
 
         function addManualRow() {
@@ -627,234 +558,103 @@
             renderDataTable();
         }
 
-        function removeRow(id) {
-            state.dataList = state.dataList.filter(r => r.id !== id);
-            renderDataTable();
-            saveState();
-        }
+        function removeRow(id) { state.dataList = state.dataList.filter(r => r.id !== id); renderDataTable(); saveState(); }
+        function clearDataTable() { if (confirm("Clear all?")) { state.dataList = []; renderDataTable(); saveState(); } }
 
-        // --- Directory Handle & Gallery ---
+        // --- File System ---
         async function selectDirectory() {
-            if (!window.showDirectoryPicker) {
-                alert("Your browser does not support folder access.");
-                return;
-            }
             try {
-                const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-                state.directoryHandle = handle;
+                state.directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
                 document.getElementById('connection-status').textContent = '● Folder Connected';
-                document.getElementById('connection-status').classList.remove('text-amber-400');
-                document.getElementById('connection-status').classList.add('text-emerald-400');
-                const btnEl = document.getElementById('folder-btn');
-                btnEl.classList.remove('bg-amber-50', 'text-amber-600', 'border-amber-100');
-                btnEl.classList.add('bg-emerald-50', 'text-emerald-600', 'border-emerald-100');
+                document.getElementById('connection-status').className = "flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-wider";
+                document.getElementById('folder-btn').className = "flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all bg-emerald-50 text-emerald-600 border border-emerald-100";
                 scanDirectory();
-            } catch (err) { if (err.name !== 'AbortError') console.error(err); }
+            } catch (err) { console.error(err); }
         }
 
         async function viewLocalFile(name) {
-            if (!state.directoryHandle) return;
-            try {
-                const fileHandle = await state.directoryHandle.getFileHandle(name);
-                const file = await fileHandle.getFile();
-                const url = URL.createObjectURL(file);
-                window.open(url, '_blank');
-                setTimeout(() => URL.revokeObjectURL(url), 60000);
-            } catch (err) { alert("Failed to open file."); }
+            const handle = await state.directoryHandle.getFileHandle(name);
+            const file = await handle.getFile();
+            window.open(URL.createObjectURL(file), '_blank');
         }
 
         async function scanDirectory() {
             if (!state.directoryHandle) return;
             const grid = document.getElementById('gallery-grid');
-            const icon = document.getElementById('refresh-icon');
-            icon.classList.add('animate-spin');
             grid.innerHTML = '';
-            try {
-                if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') return;
-                for await (const entry of state.directoryHandle.values()) {
-                    const ext = entry.name.toLowerCase().split('.').pop();
-                    if (['pdf', 'png', 'jpg', 'jpeg'].includes(ext)) {
-                        const file = await entry.getFile();
-                        const card = document.createElement('div');
-                        card.className = 'bg-white border border-slate-200 rounded-3xl p-5 shadow-sm hover:shadow-xl group transition-all';
-                        card.innerHTML = `
-                            <div onclick="viewLocalFile('${entry.name}')" class="aspect-[1.4] bg-slate-50 rounded-2xl mb-4 flex items-center justify-center relative overflow-hidden cursor-pointer">
-                                <i data-lucide="${ext === 'pdf' ? 'file-text' : 'image'}" class="w-12 h-12 text-slate-200 group-hover:scale-110 transition-transform"></i>
-                            </div>
-                            <div class="truncate pr-2">
-                                <h4 class="font-bold text-slate-800 truncate text-sm">${entry.name}</h4>
-                                <p class="text-[10px] text-slate-400 font-bold uppercase mt-1">${(file.size/1024).toFixed(1)} KB • ${new Date(file.lastModified).toLocaleDateString()}</p>
-                            </div>
-                        `;
-                        grid.appendChild(card);
-                    }
+            for await (const entry of state.directoryHandle.values()) {
+                if (entry.kind === 'file') {
+                    const card = document.createElement('div');
+                    card.className = 'bg-white border border-slate-200 rounded-3xl p-5 shadow-sm hover:shadow-xl group transition-all cursor-pointer';
+                    card.onclick = () => viewLocalFile(entry.name);
+                    card.innerHTML = `<div class="aspect-[1.4] bg-slate-50 rounded-2xl mb-4 flex items-center justify-center relative overflow-hidden"><i data-lucide="file-text" class="w-12 h-12 text-slate-200"></i></div><h4 class="font-bold text-slate-800 truncate text-sm">${entry.name}</h4>`;
+                    grid.appendChild(card);
                 }
-                lucide.createIcons();
-            } finally { icon.classList.remove('animate-spin'); }
+            }
+            lucide.createIcons();
         }
 
-        // --- Email Helper ---
+        // --- Generation & Email ---
         async function sendGmail(recipient, subject, body, attachmentData, fileName, mimeType) {
-            if (!accessToken) return false;
-
             const boundary = "foo_bar_baz";
-            const attachmentBase64 = btoa(new Uint8Array(attachmentData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-
-            const message = [
-                `To: ${recipient}`,
-                `Subject: ${subject}`,
-                "MIME-Version: 1.0",
-                `Content-Type: multipart/mixed; boundary="${boundary}"`,
-                "",
-                `--${boundary}`,
-                "Content-Type: text/plain; charset=\"UTF-8\"",
-                "MIME-Version: 1.0",
-                "Content-Transfer-Encoding: 7bit",
-                "",
-                body,
-                "",
-                `--${boundary}`,
-                `Content-Type: ${mimeType}; name="${fileName}"`,
-                `Content-Disposition: attachment; filename="${fileName}"`,
-                "Content-Transfer-Encoding: base64",
-                "",
-                attachmentBase64,
-                "",
-                `--${boundary}--`
-            ].join("\r\n");
-
-            const encodedMessage = btoa(unescape(encodeURIComponent(message)))
-                .replace(/\+/g, '-')
-                .replace(/\//g, '_')
-                .replace(/=+$/, '');
-
-            const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ raw: encodedMessage })
-            });
-
-            return response.ok;
+            const message = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--${boundary}`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", btoa(String.fromCharCode(...new Uint8Array(attachmentData))), "", `--${boundary}--`].join("\r\n");
+            const raw = btoa(unescape(encodeURIComponent(message))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw }) });
+            return resp.ok;
         }
 
         async function runGeneration() {
-            if (!state.template || !state.directoryHandle) {
-                alert("Please upload template and link folder.");
-                return;
-            }
-            if (state.emailEnabled && !accessToken) {
-                alert("Please sign in with Google to send emails.");
-                return;
-            }
-
+            if (!state.template || !state.directoryHandle) return alert("Missing template or folder");
+            if (state.emailEnabled && !accessToken) return alert("Please sign in");
             document.getElementById('loading-overlay').classList.replace('hidden', 'flex');
-            const loadingText = document.getElementById('loading-text');
-
             try {
                 const { jsPDF } = window.jspdf;
                 const { PDFDocument, rgb } = window.PDFLib;
-
-                if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
-                    await state.directoryHandle.requestPermission({ mode: 'readwrite' });
-                }
-
-                const fmt = state.outputFormat || 'pdf';
+                const fmt = state.outputFormat;
                 let successCount = 0;
-
-                for (let i = 0; i < state.dataList.length; i++) {
-                    const row = state.dataList[i];
-                    loadingText.textContent = `Processing ${i + 1} of ${state.dataList.length}...`;
-                    
-                    let fileData;
-                    const mimeType = fmt === 'pdf' ? 'application/pdf' : (fmt === 'png' ? 'image/png' : 'image/jpeg');
-                    
+                for (const row of state.dataList) {
+                    let data;
+                    const name = (row.values[state.placeholders[0].id] || 'Unnamed').replace(/[^a-z0-9]/gi, '_');
+                    const ext = fmt === 'pdf' ? 'pdf' : (fmt === 'png' ? 'png' : 'jpg');
+                    const mime = fmt === 'pdf' ? 'application/pdf' : (fmt === 'png' ? 'image/png' : 'image/jpeg');
                     if (fmt === 'pdf') {
                         if (state.template.type === 'pdf') {
-                            const pdfDoc = await PDFDocument.load(state.template.data);
-                            const firstPage = pdfDoc.getPages()[0];
-                            const { width, height } = firstPage.getSize();
-                            for (const p of state.placeholders) {
-                                const text = row.values[p.id] || '';
-                                const pdfX = (p.x / 297) * width;
-                                const pdfY = height - ((p.y / 210) * height);
+                            const doc = await PDFDocument.load(state.template.data);
+                            const page = doc.getPages()[0];
+                            const { width, height } = page.getSize();
+                            state.placeholders.forEach(p => {
                                 const hex = p.color.replace('#', '');
-                                firstPage.drawText(text, { 
-                                    x: pdfX, y: pdfY, size: p.fontSize * 1.5, 
-                                    color: rgb(parseInt(hex.substring(0,2),16)/255, parseInt(hex.substring(2,4),16)/255, parseInt(hex.substring(4,6),16)/255) 
-                                });
-                            }
-                            fileData = await pdfDoc.save();
+                                page.drawText(row.values[p.id] || '', { x: (p.x / 297) * width, y: height - ((p.y / 210) * height), size: p.fontSize * 1.5, color: rgb(parseInt(hex.substring(0,2),16)/255, parseInt(hex.substring(2,4),16)/255, parseInt(hex.substring(4,6),16)/255) });
+                            });
+                            data = await doc.save();
                         } else {
                             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
                             doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210);
-                            state.placeholders.forEach(p => {
-                                const text = row.values[p.id] || '';
-                                doc.setFontSize(p.fontSize);
-                                doc.setTextColor(p.color);
-                                doc.text(text, p.x - (doc.getTextWidth(text) / 2), p.y);
-                            });
-                            fileData = doc.output('arraybuffer');
+                            state.placeholders.forEach(p => { doc.setFontSize(p.fontSize); doc.setTextColor(p.color); doc.text(row.values[p.id] || '', p.x - (doc.getTextWidth(row.values[p.id] || '') / 2), p.y); });
+                            data = doc.output('arraybuffer');
                         }
                     } else {
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
-                        const scaleFactor = 4; 
-                        canvas.width = 297 * scaleFactor;
-                        canvas.height = 210 * scaleFactor;
+                        canvas.width = 1188; canvas.height = 840;
                         const img = new Image();
-                        await new Promise((res) => { img.onload = res; img.src = state.template.preview; });
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        state.placeholders.forEach(p => {
-                            const text = row.values[p.id] || '';
-                            ctx.fillStyle = p.color;
-                            ctx.font = `${p.bold ? 'bold ' : ''}${p.fontSize * scaleFactor}px Inter, sans-serif`;
-                            ctx.textAlign = 'center';
-                            ctx.fillText(text, (p.x/297)*canvas.width, (p.y/210)*canvas.height);
-                        });
-                        const blob = await new Promise(res => canvas.toBlob(res, mimeType, 0.95));
-                        fileData = await blob.arrayBuffer();
+                        await new Promise(res => { img.onload = res; img.src = state.template.preview; });
+                        ctx.drawImage(img, 0, 0, 1188, 840);
+                        state.placeholders.forEach(p => { ctx.fillStyle = p.color; ctx.font = `${p.fontSize * 4}px Inter`; ctx.textAlign = 'center'; ctx.fillText(row.values[p.id] || '', (p.x/297)*1188, (p.y/210)*840); });
+                        data = await (await new Promise(res => canvas.toBlob(res, mime))).arrayBuffer();
                     }
-
-                    const ext = fmt === 'pdf' ? 'pdf' : (fmt === 'png' ? 'png' : 'jpg');
-                    const fileName = `Cert_${(row.values[state.placeholders[0].id] || 'Unnamed').replace(/[^a-z0-9]/gi, '_')}.${ext}`;
-                    
-                    // Save locally
-                    const fileHandle = await state.directoryHandle.getFileHandle(fileName, { create: true });
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(fileData);
-                    await writable.close();
-
-                    // Send Email
+                    const handle = await state.directoryHandle.getFileHandle(`${name}.${ext}`, { create: true });
+                    const wr = await handle.createWritable(); await wr.write(data); await wr.close();
                     if (state.emailEnabled && row.values['email']) {
-                        const sent = await sendGmail(
-                            row.values['email'],
-                            "Your Certificate",
-                            "Hello, please find your certificate attached.",
-                            fileData,
-                            fileName,
-                            mimeType
-                        );
-                        if (sent) successCount++;
+                        if (await sendGmail(row.values['email'], "Your Certificate", "Attached is your certificate.", data, `${name}.${ext}`, mime)) successCount++;
                     }
                 }
-                
-                if (state.emailEnabled) alert(`Done! Sent ${successCount} emails.`);
+                if (state.emailEnabled) alert(`Sent ${successCount} emails.`);
                 switchTab('gallery');
-            } catch (err) {
-                console.error(err);
-                alert("Error: " + err.message);
-            } finally {
-                document.getElementById('loading-overlay').classList.replace('flex', 'hidden');
-            }
+            } catch (err) { console.error(err); alert(err.message); } finally { document.getElementById('loading-overlay').classList.replace('flex', 'hidden'); }
         }
 
-        window.onload = async () => {
-            await loadState();
-            lucide.createIcons();
-        };
+        window.onload = loadState;
     </script>
 </body>
 </html>
