@@ -443,15 +443,35 @@
 
         // --- Directory Handle & Gallery ---
         async function selectDirectory() {
+            // Compatibility Check
+            if (!window.showDirectoryPicker) {
+                alert("Your browser does not support the File System Access API. This feature requires a modern browser like Chrome or Edge and must be served over HTTPS.");
+                return;
+            }
+
             try {
                 const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
                 state.directoryHandle = handle;
-                document.getElementById('connection-status').textContent = '● Folder Connected';
-                document.getElementById('connection-status').classList.replace('text-amber-400', 'text-emerald-400');
-                document.getElementById('folder-btn').classList.replace('bg-amber-50', 'bg-emerald-50');
-                document.getElementById('folder-btn').classList.replace('text-amber-600', 'text-emerald-600');
+                
+                // Update Global Status Text
+                const statusEl = document.getElementById('connection-status');
+                statusEl.textContent = '● Folder Connected';
+                statusEl.classList.remove('text-amber-400');
+                statusEl.classList.add('text-emerald-400');
+                
+                // Update Button Visuals
+                const btnEl = document.getElementById('folder-btn');
+                btnEl.classList.remove('bg-amber-50', 'text-amber-600', 'border-amber-100');
+                btnEl.classList.add('bg-emerald-50', 'text-emerald-600', 'border-emerald-100');
+                
                 scanDirectory();
-            } catch (err) { console.error(err); }
+            } catch (err) { 
+                // Don't alert if user just cancelled the dialog
+                if (err.name !== 'AbortError') {
+                    console.error("Directory selection failed:", err);
+                    alert("Error accessing folder: " + err.message);
+                }
+            }
         }
 
         async function scanDirectory() {
@@ -462,6 +482,14 @@
             
             grid.innerHTML = '';
             try {
+                // Ensure we still have permission
+                if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+                    // We don't want to pop a request automatically on every refresh tab, 
+                    // so we just return if we lost access.
+                    icon.classList.remove('animate-spin');
+                    return;
+                }
+
                 for await (const entry of state.directoryHandle.values()) {
                     if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.pdf')) {
                         const file = await entry.getFile();
@@ -483,6 +511,8 @@
                     }
                 }
                 lucide.createIcons();
+            } catch (err) {
+                console.error("Scanning failed:", err);
             } finally {
                 icon.classList.remove('animate-spin');
             }
@@ -490,12 +520,20 @@
 
         // --- Bulk Generation ---
         async function runGeneration() {
-            if (!state.template || !state.directoryHandle) return;
+            if (!state.template || !state.directoryHandle) {
+                if (!state.directoryHandle) alert("Please link a local folder first using the 'Link Folder' button.");
+                return;
+            }
             document.getElementById('loading-overlay').classList.replace('hidden', 'flex');
 
             try {
                 const { jsPDF } = window.jspdf;
                 const { PDFDocument, rgb } = window.PDFLib;
+
+                // Verify permissions before starting long job
+                if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+                    await state.directoryHandle.requestPermission({ mode: 'readwrite' });
+                }
 
                 for (const row of state.dataList) {
                     let pdfBytes;
@@ -537,7 +575,8 @@
                 }
                 switchTab('gallery');
             } catch (err) {
-                console.error(err);
+                console.error("Generation error:", err);
+                alert("An error occurred during generation: " + err.message);
             } finally {
                 document.getElementById('loading-overlay').classList.replace('flex', 'hidden');
             }
