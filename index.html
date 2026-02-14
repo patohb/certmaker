@@ -9,7 +9,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
@@ -17,45 +16,13 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         .marker { cursor: move; user-select: none; }
-        
-        /* Spreadsheet Grid Styles */
-        .grid-cell {
-            border: 1px solid #e2e8f0;
-            padding: 0;
-            transition: background-color 0.1s;
-        }
-        .grid-cell:focus-within {
-            outline: 2px solid #10b981;
-            outline-offset: -2px;
-            background-color: #f0fdf4;
-        }
-        .grid-input {
-            width: 100%;
-            height: 100%;
-            padding: 8px 12px;
-            background: transparent;
-            border: none;
-            outline: none;
-            font-size: 13px;
-        }
-        .grid-header {
-            background-color: #f8fafc;
-            font-weight: 700;
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #64748b;
-            border: 1px solid #e2e8f0;
-            padding: 10px 12px;
-        }
-
+        .grid-cell { border: 1px solid #e2e8f0; padding: 0; transition: background-color 0.1s; }
+        .grid-cell:focus-within { outline: 2px solid #10b981; outline-offset: -2px; background-color: #f0fdf4; }
+        .grid-input { width: 100%; height: 100%; padding: 8px 12px; background: transparent; border: none; outline: none; font-size: 13px; }
+        .grid-header { background-color: #f8fafc; font-weight: 700; font-size: 11px; text-transform: uppercase; color: #64748b; border: 1px solid #e2e8f0; padding: 10px 12px; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        
-        @keyframes float {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-            100% { transform: translateY(0px); }
-        }
+        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
         .animate-float { animation: float 3s ease-in-out infinite; }
     </style>
 </head>
@@ -89,19 +56,16 @@
             </nav>
 
             <div class="flex items-center gap-2">
-                <!-- Language Toggle -->
                 <button onclick="toggleLanguage()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-colors w-12 text-center">
                     <span id="lang-label">EN</span>
                 </button>
-
-                <!-- Google Login Section -->
                 <div id="auth-section" class="flex items-center gap-2 bg-slate-800 rounded-xl px-3 py-1.5">
                     <button id="btn-login" onclick="handleAuthClick()" class="text-xs font-bold text-slate-300 hover:text-white flex items-center gap-2">
                         <i data-lucide="log-in" class="w-4 h-4"></i> <span data-lang="signIn">Sign in</span>
                     </button>
                     <div id="user-info" class="hidden items-center gap-2">
-                        <div id="user-avatar" class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-[10px] font-bold text-white">U</div>
-                        <span id="user-status" class="text-[10px] text-slate-400 max-w-[100px] truncate">Auth</span>
+                        <div class="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center text-[10px] font-bold text-white">G</div>
+                        <span class="text-[10px] text-emerald-400 font-bold tracking-wide">CONNECTED</span>
                         <button onclick="handleSignoutClick()" class="text-slate-500 hover:text-red-400"><i data-lucide="log-out" class="w-3 h-3"></i></button>
                     </div>
                     <button onclick="toggleConfig()" class="text-slate-500 hover:text-white ml-1"><i data-lucide="settings" class="w-4 h-4"></i></button>
@@ -110,24 +74,20 @@
         </header>
 
         <!-- Config Modal -->
-        <div id="config-panel" class="hidden bg-slate-800 border-b border-slate-700 p-4 text-white">
-            <div class="max-w-2xl mx-auto flex flex-col gap-3">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-xs font-black uppercase tracking-widest text-slate-400">Google Cloud Configuration</h3>
-                    <button onclick="toggleConfig()" class="text-slate-500 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+        <div id="config-panel" class="hidden fixed inset-0 bg-slate-900/90 z-50 flex items-center justify-center">
+            <div class="bg-slate-800 p-6 rounded-2xl w-full max-w-md border border-slate-700 text-white shadow-2xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold">Google Configuration</h3>
+                    <button onclick="toggleConfig()" class="hover:text-red-400"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
-                <div class="flex gap-2">
-                    <input type="text" id="google-client-id" placeholder="Paste Google Client ID here..." class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-emerald-500 text-white">
-                    <button onclick="updateClientId()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-xs font-bold transition-colors" data-lang="saveId">Save ID</button>
-                </div>
-                <p class="text-[10px] text-slate-500">
-                    Origins: <span class="text-slate-300 font-mono" id="current-origin"></span>
-                </p>
+                <input type="text" id="google-client-id" class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm mb-4" placeholder="Client ID">
+                <button onclick="updateClientId()" class="w-full bg-emerald-600 py-2 rounded font-bold hover:bg-emerald-500">Save & Reload</button>
+                <p class="text-xs text-slate-500 mt-4">Origin: <span id="current-origin"></span></p>
             </div>
         </div>
 
         <main class="flex-1 p-4 md:p-8 overflow-y-auto">
-            <!-- Tab Contents -->
+            <!-- Tab Template -->
             <section id="tab-template" class="tab-content active">
                 <div class="max-w-2xl mx-auto space-y-6">
                     <div id="template-upload-area" class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
@@ -151,6 +111,7 @@
                 </div>
             </section>
 
+            <!-- Tab Design -->
             <section id="tab-design" class="tab-content">
                 <div class="grid lg:grid-cols-4 gap-8">
                     <div class="lg:col-span-3 space-y-4">
@@ -163,16 +124,12 @@
                     <div class="space-y-4">
                         <div class="flex justify-between items-center">
                             <h3 class="font-bold text-slate-800" data-lang="labels">Labels</h3>
-                            <button onclick="addPlaceholder()" id="add-label-btn" class="p-1 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
-                                <i data-lucide="plus" class="w-4 h-4"></i>
-                            </button>
+                            <button onclick="addPlaceholder()" class="p-1 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"><i data-lucide="plus" class="w-4 h-4"></i></button>
                         </div>
                         <div id="placeholders-list" class="space-y-3 max-h-[350px] overflow-y-auto pr-2 border-b border-slate-100 pb-2"></div>
-                        
                         <button onclick="manualSaveDesign()" id="btn-save-design" class="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-blue-700 transition-colors">
                             <i data-lucide="save" class="w-4 h-4"></i> <span data-lang="saveConfig">Save Config</span>
                         </button>
-
                         <div class="pt-4 border-t border-slate-200 space-y-4">
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2" data-lang="outputFormat">Output Format</label>
@@ -194,6 +151,7 @@
                 </div>
             </section>
 
+            <!-- Tab Data -->
             <section id="tab-data" class="tab-content">
                 <div class="space-y-6">
                     <div class="flex flex-col md:flex-row justify-between items-end gap-4">
@@ -211,18 +169,11 @@
                         </div>
                     </div>
                     
-                    <!-- Process Status Tracker -->
                     <div id="last-process-status" class="hidden bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between">
                         <div class="flex items-center gap-3">
-                            <div class="p-2 bg-emerald-500 rounded-lg text-white">
-                                <i data-lucide="check-circle" class="w-5 h-5"></i>
-                            </div>
-                            <div>
-                                <h4 class="text-sm font-bold text-emerald-900" data-lang="lastCompleted">Last process completed</h4>
-                                <p id="status-summary" class="text-xs text-emerald-700">...</p>
-                            </div>
+                            <div class="p-2 bg-emerald-500 rounded-lg text-white"><i data-lucide="check-circle" class="w-5 h-5"></i></div>
+                            <div><h4 class="text-sm font-bold text-emerald-900" data-lang="lastCompleted">Last process completed</h4><p id="status-summary" class="text-xs text-emerald-700">...</p></div>
                         </div>
-                        <button onclick="clearBatchStatus()" class="text-emerald-400 hover:text-emerald-600 transition-colors"><i data-lucide="x" class="w-4 h-4"></i></button>
                     </div>
 
                     <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
@@ -230,9 +181,7 @@
                             <div class="flex items-center gap-4 text-xs font-bold text-slate-500 uppercase">
                                 <span id="row-count">0 Rows</span>
                                 <span class="text-slate-300">|</span>
-                                <button onclick="clearDataTable()" class="text-red-500 hover:text-red-700 transition-colors flex items-center gap-1">
-                                    <i data-lucide="trash-2" class="w-3 h-3"></i> <span data-lang="clearAll">Clear All</span>
-                                </button>
+                                <button onclick="clearDataTable()" class="text-red-500 hover:text-red-700 transition-colors flex items-center gap-1"><i data-lucide="trash-2" class="w-3 h-3"></i> <span data-lang="clearAll">Clear All</span></button>
                             </div>
                         </div>
                         <div class="overflow-x-auto max-h-[500px]">
@@ -242,9 +191,7 @@
                             </table>
                         </div>
                     </div>
-                    <button onclick="addManualRow()" class="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-bold text-sm hover:bg-emerald-100 transition-colors">
-                        <i data-lucide="plus" class="w-4 h-4"></i> <span data-lang="addRow">Add Empty Row</span>
-                    </button>
+                    <button onclick="addManualRow()" class="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-bold text-sm hover:bg-emerald-100 transition-colors"><i data-lucide="plus" class="w-4 h-4"></i> <span data-lang="addRow">Add Empty Row</span></button>
                 </div>
             </section>
         </main>
@@ -253,81 +200,23 @@
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 hidden items-center justify-center">
         <div class="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-sm w-full border border-slate-100 relative overflow-hidden">
-            <div id="processing-visual" class="animate-float mb-6 inline-block bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-sm">
-                <i id="status-icon" data-lucide="file-text" class="w-16 h-16 text-emerald-500"></i>
-            </div>
+            <div id="processing-visual" class="animate-float mb-6 inline-block bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-sm"><i id="status-icon" data-lucide="file-text" class="w-16 h-16 text-emerald-500"></i></div>
             <h3 id="loading-title" class="text-xl font-black text-slate-900" data-lang="processing">Processing Batch</h3>
             <p id="loading-text" class="text-sm text-slate-500 mt-2 font-medium">...</p>
-            <div class="mt-6 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div id="progress-bar" class="h-full bg-emerald-500 transition-all duration-300 w-0"></div>
-            </div>
+            <div class="mt-6 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden"><div id="progress-bar" class="h-full bg-emerald-500 transition-all duration-300 w-0"></div></div>
         </div>
     </div>
 
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-        // --- Config ---
-        const HARDCODED_GOOGLE_CLIENT_ID = '939971084257-icn512k0in8ohsmbphr3i1uhbp1k1os4.apps.googleusercontent.com'; 
+        
+        // --- Configuration ---
+        const HARDCODED_GOOGLE_CLIENT_ID = '939971084257-icn512k0in8ohsmbphr3i1uhbp1k1os4.apps.googleusercontent.com';
         const SCOPES = 'https://www.googleapis.com/auth/gmail.send';
         
-        // --- Localization ---
-        const translations = {
-            en: {
-                tabTemplate: "Template", tabDesign: "Design", tabData: "Data",
-                folderDisconnected: "○ Folder Disconnected", folderConnected: "● Folder Linked",
-                signIn: "Sign in", saveId: "Save ID",
-                loadTemplate: "Load Template", browseFiles: "Browse Files", remove: "Remove", nextDesign: "Next: Design",
-                uploadHint: "Upload a template to begin", labels: "Labels", saveConfig: "Save Config",
-                outputFormat: "Output Format", enableEmail: "Enable Email",
-                recipientData: "Recipient Data", pasteHint: "Paste directly from Excel/Sheets",
-                linkFolder: "Link Folder", runProcess: "Run Process",
-                lastCompleted: "Last process completed", clearAll: "Clear All", addRow: "Add Empty Row",
-                processing: "Processing Batch",
-                filesSaved: "Files saved", emailsSent: "Emails sent"
-            },
-            ms: {
-                tabTemplate: "Templat", tabDesign: "Reka Bentuk", tabData: "Data",
-                folderDisconnected: "○ Folder Terputus", folderConnected: "● Folder Terhubung",
-                signIn: "Log Masuk", saveId: "Simpan ID",
-                loadTemplate: "Muat Templat", browseFiles: "Pilih Fail", remove: "Buang", nextDesign: "Seterusnya: Reka Bentuk",
-                uploadHint: "Muat naik templat untuk bermula", labels: "Label", saveConfig: "Simpan Konfigurasi",
-                outputFormat: "Format Output", enableEmail: "Aktifkan E-mel",
-                recipientData: "Data Penerima", pasteHint: "Tampal terus dari Excel/Sheets",
-                linkFolder: "Paut Folder", runProcess: "Jalankan Proses",
-                lastCompleted: "Proses terakhir selesai", clearAll: "Padam Semua", addRow: "Tambah Baris Kosong",
-                processing: "Memproses Kelompok",
-                filesSaved: "Fail disimpan", emailsSent: "E-mel dihantar"
-            }
-        };
-
-        let currentLang = 'en';
-
-        function toggleLanguage() {
-            currentLang = currentLang === 'en' ? 'ms' : 'en';
-            document.getElementById('lang-label').textContent = currentLang.toUpperCase();
-            applyLanguage();
-        }
-
-        function applyLanguage() {
-            document.querySelectorAll('[data-lang]').forEach(el => {
-                const key = el.getAttribute('data-lang');
-                if (translations[currentLang][key]) {
-                    el.textContent = translations[currentLang][key];
-                }
-            });
-            // Re-render things that generate text dynamically if needed
-            if (state.directoryHandle) {
-                document.getElementById('connection-status').querySelector('span').textContent = translations[currentLang].folderConnected;
-            } else {
-                document.getElementById('connection-status').querySelector('span').textContent = translations[currentLang].folderDisconnected;
-            }
-            renderBatchStatus();
-        }
-
-        // --- Auth & State ---
-        let tokenClient;
+        // --- State Management ---
         let accessToken = null;
+        let tokenClient;
         let state = {
             activeTab: 'template',
             template: null,
@@ -338,53 +227,36 @@
             outputFormat: 'pdf',
             emailEnabled: false,
             googleClientId: '',
-            lastBatchStatus: null
+            lastBatchStatus: null,
+            auth: { token: null, expiry: 0 } // Store Auth Data
         };
 
-        const DB_NAME = 'CertifyLocalDB_v7'; // Bumped version for clean slate
+        const DB_NAME = 'CertifyLocalDB_v8'; // Bumped DB Version
         const STORE_NAME = 'AppState';
 
-        function toggleConfig() {
-            document.getElementById('config-panel').classList.toggle('hidden');
-            document.getElementById('current-origin').textContent = window.location.origin;
-        }
+        const translations = {
+            en: {
+                tabTemplate: "Template", tabDesign: "Design", tabData: "Data",
+                folderDisconnected: "○ Folder Disconnected", folderConnected: "● Folder Linked (Ready)",
+                signIn: "Sign in", saveId: "Save ID", loadTemplate: "Load Template", browseFiles: "Browse Files", remove: "Remove", nextDesign: "Next: Design",
+                uploadHint: "Upload a template to begin", labels: "Labels", saveConfig: "Save Config", outputFormat: "Output Format", enableEmail: "Enable Email",
+                recipientData: "Recipient Data", pasteHint: "Paste directly from Excel/Sheets", linkFolder: "Link Folder", runProcess: "Run Process",
+                lastCompleted: "Last process completed", clearAll: "Clear All", addRow: "Add Empty Row", processing: "Processing Batch",
+                filesSaved: "Files saved", emailsSent: "Emails sent"
+            },
+            ms: {
+                tabTemplate: "Templat", tabDesign: "Reka Bentuk", tabData: "Data",
+                folderDisconnected: "○ Folder Terputus", folderConnected: "● Folder Terhubung (Sedia)",
+                signIn: "Log Masuk", saveId: "Simpan ID", loadTemplate: "Muat Templat", browseFiles: "Pilih Fail", remove: "Buang", nextDesign: "Seterusnya: Reka Bentuk",
+                uploadHint: "Muat naik templat untuk bermula", labels: "Label", saveConfig: "Simpan Konfigurasi", outputFormat: "Format Output", enableEmail: "Aktifkan E-mel",
+                recipientData: "Data Penerima", pasteHint: "Tampal terus dari Excel/Sheets", linkFolder: "Paut Folder", runProcess: "Jalankan Proses",
+                lastCompleted: "Proses terakhir selesai", clearAll: "Padam Semua", addRow: "Tambah Baris Kosong", processing: "Memproses Kelompok",
+                filesSaved: "Fail disimpan", emailsSent: "E-mel dihantar"
+            }
+        };
+        let currentLang = 'en';
 
-        function updateClientId() {
-            const id = document.getElementById('google-client-id').value.trim();
-            if (!id) return alert("Invalid ID");
-            state.googleClientId = id; saveState(); initGsi();
-            alert("Updated. Try signing in.");
-        }
-
-        function initGsi() {
-            const clientId = HARDCODED_GOOGLE_CLIENT_ID || state.googleClientId;
-            if (!clientId || typeof google === 'undefined') return;
-            tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: clientId, scope: SCOPES,
-                callback: (resp) => {
-                    if (resp.error) { console.error(resp); alert("Auth Error: " + resp.message); return; }
-                    accessToken = resp.access_token;
-                    updateAuthUI(true);
-                }
-            });
-        }
-
-        function handleAuthClick() {
-            const clientId = HARDCODED_GOOGLE_CLIENT_ID || state.googleClientId;
-            if (!clientId) { toggleConfig(); return; }
-            if (!tokenClient) initGsi();
-            tokenClient.requestAccessToken({ prompt: 'consent' });
-        }
-
-        function handleSignoutClick() {
-            if (accessToken) { google.accounts.oauth2.revoke(accessToken); accessToken = null; updateAuthUI(false); }
-        }
-
-        function updateAuthUI(isLoggedIn) {
-            document.getElementById('btn-login').classList.toggle('hidden', isLoggedIn);
-            document.getElementById('user-info').classList.toggle('hidden', !isLoggedIn);
-        }
-
+        // --- Database Utils ---
         async function initDB() {
             return new Promise(resolve => {
                 const r = indexedDB.open(DB_NAME, 1);
@@ -397,10 +269,10 @@
             try {
                 const db = await initDB();
                 const tx = db.transaction(STORE_NAME, 'readwrite');
-                // Ensure directoryHandle is saved; dragInfo excluded
-                const { dragInfo, ...toSave } = state;
+                // We MUST save directoryHandle to persist permission hints
+                const { dragInfo, ...toSave } = state; 
                 tx.objectStore(STORE_NAME).put(toSave, 'current');
-            } catch (e) { console.warn("Save failed", e); }
+            } catch (e) { console.warn("State save failed", e); }
         }
 
         async function loadState() {
@@ -410,21 +282,24 @@
                 r.onsuccess = () => {
                     if (r.result) {
                         state = { ...state, ...r.result };
+                        // Restore Configs
                         if (state.outputFormat) document.getElementById('output-format-select').value = state.outputFormat;
                         if (state.emailEnabled) document.getElementById('email-toggle').checked = true;
                         if (state.googleClientId) document.getElementById('google-client-id').value = state.googleClientId;
                         
+                        // Restore Auth
+                        if (state.auth && state.auth.token && state.auth.expiry > Date.now()) {
+                            accessToken = state.auth.token;
+                            updateAuthUI(true);
+                        } else {
+                            state.auth = { token: null, expiry: 0 }; // Expired
+                        }
+
                         // Restore Folder UI
                         if (state.directoryHandle) {
-                            const btn = document.getElementById('folder-btn');
-                            btn.classList.replace('bg-amber-50', 'bg-emerald-50');
-                            btn.classList.replace('text-amber-600', 'text-emerald-600');
-                            btn.classList.replace('border-amber-100', 'border-emerald-100');
-                            // Text update handled by applyLanguage usually, but immediate update here:
-                            document.getElementById('connection-status').querySelector('span').textContent = translations[currentLang].folderConnected;
-                            document.getElementById('connection-status').className = "flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-wider";
+                            updateFolderUI(true);
                         }
-                        
+
                         renderAll(); renderBatchStatus(); initGsi();
                     }
                     resolve();
@@ -432,10 +307,98 @@
             });
         }
 
+        // --- Auth ---
+        function initGsi() {
+            const clientId = HARDCODED_GOOGLE_CLIENT_ID || state.googleClientId;
+            if (!clientId || typeof google === 'undefined') return;
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: clientId, scope: SCOPES,
+                callback: (resp) => {
+                    if (resp.error) return alert("Auth Error: " + resp.message);
+                    accessToken = resp.access_token;
+                    state.auth = { token: accessToken, expiry: Date.now() + (resp.expires_in * 1000) };
+                    saveState();
+                    updateAuthUI(true);
+                }
+            });
+        }
+
+        function handleAuthClick() {
+            if (!tokenClient) initGsi();
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+        }
+
+        function handleSignoutClick() {
+            if (accessToken) { 
+                google.accounts.oauth2.revoke(accessToken); 
+                accessToken = null; 
+                state.auth = { token: null, expiry: 0 };
+                saveState();
+                updateAuthUI(false); 
+            }
+        }
+
+        function updateAuthUI(isLoggedIn) {
+            document.getElementById('btn-login').classList.toggle('hidden', isLoggedIn);
+            document.getElementById('user-info').classList.toggle('hidden', !isLoggedIn);
+        }
+
+        function toggleConfig() {
+            document.getElementById('config-panel').classList.toggle('hidden');
+            document.getElementById('current-origin').textContent = window.location.origin;
+        }
+
+        function updateClientId() {
+            const val = document.getElementById('google-client-id').value.trim();
+            if (val) { state.googleClientId = val; saveState(); initGsi(); toggleConfig(); }
+        }
+
+        // --- File System ---
+        async function selectDirectory() {
+            try {
+                state.directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                updateFolderUI(true);
+                saveState();
+            } catch (e) { console.error(e); }
+        }
+
+        function updateFolderUI(connected) {
+            const btn = document.getElementById('folder-btn');
+            const status = document.getElementById('connection-status');
+            const statusText = status.querySelector('span');
+            
+            if (connected) {
+                btn.classList.replace('bg-amber-50', 'bg-emerald-50');
+                btn.classList.replace('text-amber-600', 'text-emerald-600');
+                btn.classList.replace('border-amber-100', 'border-emerald-100');
+                status.className = "flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-wider";
+                statusText.textContent = translations[currentLang].folderConnected;
+            } else {
+                statusText.textContent = translations[currentLang].folderDisconnected;
+            }
+        }
+
+        // --- Core Functions ---
+        function toggleLanguage() {
+            currentLang = currentLang === 'en' ? 'ms' : 'en';
+            document.getElementById('lang-label').textContent = currentLang.toUpperCase();
+            applyLanguage();
+        }
+
+        function applyLanguage() {
+            document.querySelectorAll('[data-lang]').forEach(el => {
+                const key = el.getAttribute('data-lang');
+                if (translations[currentLang][key]) el.textContent = translations[currentLang][key];
+            });
+            if (state.directoryHandle) updateFolderUI(true);
+            renderBatchStatus();
+        }
+
         function switchTab(tabId) {
             state.activeTab = tabId;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.getElementById(`tab-${tabId}`).classList.add('active');
+            
             document.querySelectorAll('.nav-btn').forEach(btn => {
                 btn.classList.remove('bg-white', 'text-slate-900', 'shadow-xl');
                 btn.classList.add('text-slate-400', 'hover:text-white');
@@ -447,11 +410,60 @@
             if (tabId === 'data') renderDataTable();
         }
 
-        function renderAll() {
-            renderTemplate(); renderPlaceholders(); renderDataTable(); lucide.createIcons();
+        // --- Logic: Template ---
+        function arrayBufferToBase64(buffer) {
+            let binary = ''; const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            return window.btoa(binary);
+        }
+        function base64ToArrayBuffer(base64) {
+            const b = window.atob(base64); const len = b.length; const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) bytes[i] = b.charCodeAt(i);
+            return bytes.buffer;
         }
 
-        // --- Logic: Template & Design ---
+        document.getElementById('file-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const isPDF = file.type === 'application/pdf';
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    const raw = event.target.result;
+                    let preview = '', dataStr = '';
+                    
+                    if (isPDF) {
+                        dataStr = arrayBufferToBase64(raw); // Store as B64 safely
+                        const task = pdfjsLib.getDocument({ data: new Uint8Array(raw.slice(0)) });
+                        const p = await task.promise;
+                        const page = await p.getPage(1);
+                        const v = page.getViewport({ scale: 2.0 });
+                        const c = document.createElement('canvas'); c.width = v.width; c.height = v.height;
+                        await page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise;
+                        preview = c.toDataURL();
+                    } else {
+                        preview = event.target.result; dataStr = event.target.result;
+                    }
+                    state.template = { type: isPDF ? 'pdf' : 'image', data: dataStr, name: file.name, preview: preview };
+                    renderTemplate(); saveState();
+                } catch (er) { console.error(er); alert("File Load Error"); }
+            };
+            if (isPDF) reader.readAsArrayBuffer(file); else reader.readAsDataURL(file);
+        });
+
+        function renderTemplate() {
+            const upload = document.getElementById('template-upload-area');
+            const area = document.getElementById('template-preview-area');
+            const cont = document.getElementById('preview-container');
+            if (state.template) {
+                upload.classList.add('hidden'); area.classList.remove('hidden');
+                cont.innerHTML = state.template.preview ? `<img src="${state.template.preview}" class="max-h-64 rounded shadow-md">` : '';
+            } else { upload.classList.remove('hidden'); area.classList.add('hidden'); }
+            renderDesignCanvas();
+        }
+        function removeTemplate() { state.template = null; renderTemplate(); saveState(); }
+
+        // --- Logic: Design ---
         async function manualSaveDesign() {
             await saveState();
             const btn = document.getElementById('btn-save-design');
@@ -459,11 +471,7 @@
             btn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i> Saved!';
             btn.classList.replace('bg-blue-600', 'bg-emerald-600');
             lucide.createIcons();
-            setTimeout(() => {
-                btn.innerHTML = original;
-                btn.classList.replace('bg-emerald-600', 'bg-blue-600');
-                lucide.createIcons();
-            }, 2000);
+            setTimeout(() => { btn.innerHTML = original; btn.classList.replace('bg-emerald-600', 'bg-blue-600'); lucide.createIcons(); }, 1500);
         }
 
         function renderDesignCanvas() {
@@ -492,8 +500,6 @@
             });
         }
 
-        // --- Logic: Data ---
-        function toggleEmailColumn(enabled) { state.emailEnabled = enabled; renderDataTable(); saveState(); }
         function addPlaceholder() {
             if (state.placeholders.length>=5) return;
             state.placeholders.push({ id: Date.now().toString(), name: 'Label', x: 148, y: 110, fontSize: 20, color: '#000000', bold: false });
@@ -512,6 +518,8 @@
             lucide.createIcons();
         }
 
+        // --- Logic: Data ---
+        function toggleEmailColumn(enabled) { state.emailEnabled = enabled; renderDataTable(); saveState(); }
         function renderDataTable() {
             const head = document.getElementById('table-header');
             head.innerHTML = `<tr><th class="grid-header w-12 text-center">#</th>${state.placeholders.map(p=>`<th class="grid-header">${p.name}</th>`).join('')}${state.emailEnabled ? `<th class="grid-header w-64 bg-blue-50 text-blue-600">Recipient Email</th>`:''}<th class="grid-header w-12"></th></tr>`;
@@ -524,7 +532,6 @@
             document.getElementById('row-count').textContent = `${state.dataList.length} Rows`;
             lucide.createIcons();
         }
-
         function handleGridPaste(e) {
             e.preventDefault();
             const lines = e.clipboardData.getData('text').split(/\r?\n/).filter(l => l.trim() !== '');
@@ -538,70 +545,11 @@
                 renderDataTable(); saveState();
             } else { e.target.value = lines[0]; e.target.dispatchEvent(new Event('input')); }
         }
-
-        function addManualRow() {
-            const v = {}; state.placeholders.forEach(p => v[p.id] = '');
-            if (state.emailEnabled) v['email'] = '';
-            state.dataList.push({ id: Date.now().toString(), values: v }); renderDataTable();
-        }
+        function addManualRow() { const v = {}; state.placeholders.forEach(p => v[p.id] = ''); if (state.emailEnabled) v['email'] = ''; state.dataList.push({ id: Date.now().toString(), values: v }); renderDataTable(); }
         function removeRow(id) { state.dataList = state.dataList.filter(r => r.id !== id); renderDataTable(); saveState(); }
         function clearDataTable() { if (confirm("Clear all?")) { state.dataList = []; renderDataTable(); saveState(); } }
 
-        // --- File System ---
-        async function selectDirectory() {
-            try {
-                state.directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-                document.getElementById('connection-status').querySelector('span').textContent = translations[currentLang].folderConnected;
-                document.getElementById('connection-status').className = "flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-wider";
-                const btn = document.getElementById('folder-btn');
-                btn.classList.replace('bg-amber-50', 'bg-emerald-50');
-                btn.classList.replace('text-amber-600', 'text-emerald-600');
-                btn.classList.replace('border-amber-100', 'border-emerald-100');
-                saveState();
-            } catch (e) { console.error(e); }
-        }
-
-        // --- Template ---
-        function arrayBufferToBase64(buffer) {
-            let binary = ''; const bytes = new Uint8Array(buffer);
-            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-            return window.btoa(binary);
-        }
-        function base64ToArrayBuffer(base64) {
-            const b = window.atob(base64); const len = b.length; const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) bytes[i] = b.charCodeAt(i);
-            return bytes.buffer;
-        }
-
-        document.getElementById('file-input').addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const isPDF = file.type === 'application/pdf';
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                let preview = '', dataStr = '';
-                try {
-                    const raw = event.target.result;
-                    dataStr = arrayBufferToBase64(raw); // Safe convert first
-                    if (isPDF) {
-                        const task = pdfjsLib.getDocument({ data: new Uint8Array(raw.slice(0)) });
-                        const p = await task.promise;
-                        const page = await p.getPage(1);
-                        const v = page.getViewport({ scale: 2.0 });
-                        const c = document.createElement('canvas'); c.width = v.width; c.height = v.height;
-                        await page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise;
-                        preview = c.toDataURL();
-                    } else {
-                        preview = event.target.result; dataStr = event.target.result;
-                    }
-                    state.template = { type: isPDF ? 'pdf' : 'image', data: dataStr, name: file.name, preview: preview };
-                    renderTemplate(); saveState();
-                } catch (er) { console.error(er); alert("Upload failed"); }
-            };
-            if (isPDF) reader.readAsArrayBuffer(file); else reader.readAsDataURL(file);
-        });
-
-        // --- Generation ---
+        // --- Logic: Generation ---
         function renderBatchStatus() {
             const el = document.getElementById('last-process-status');
             if (state.lastBatchStatus) {
@@ -613,10 +561,8 @@
 
         async function sendGmail(recipient, subject, body, attachmentData, fileName, mimeType) {
             try {
-                const boundary = "foo_bar_baz";
                 const b64 = arrayBufferToBase64(attachmentData);
-                const msg = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--${boundary}`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", b64, "", `--${boundary}--`].join("\r\n");
-                // Base64Url encode manually for Gmail API
+                const msg = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="foo_bar_baz"`, "", `--foo_bar_baz`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--foo_bar_baz`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", b64, "", `--foo_bar_baz--`].join("\r\n");
                 const raw = window.btoa(unescape(encodeURIComponent(msg))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
                 const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { 
                     method: 'POST', 
@@ -632,6 +578,13 @@
             if (!state.directoryHandle) return alert("Link a folder first");
             if (state.emailEnabled && !accessToken) return alert("Sign in first");
 
+            // Check folder permissions first
+            try {
+                if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+                    if (await state.directoryHandle.requestPermission({ mode: 'readwrite' }) !== 'granted') return alert("Folder permission required.");
+                }
+            } catch(e) { return alert("Re-link folder."); }
+
             const overlay = document.getElementById('loading-overlay');
             overlay.classList.replace('hidden', 'flex');
             const txt = document.getElementById('loading-text');
@@ -641,9 +594,8 @@
                 const { jsPDF } = window.jspdf;
                 const { PDFDocument, rgb } = window.PDFLib;
                 const fmt = state.outputFormat;
-                
                 let saved = 0, emailed = 0;
-                // Pre-decode template buffer for efficiency
+                
                 const baseBytes = state.template.type === 'pdf' ? new Uint8Array(base64ToArrayBuffer(state.template.data)) : null;
 
                 for (let i = 0; i < state.dataList.length; i++) {
@@ -653,13 +605,12 @@
                     const mime = fmt === 'pdf' ? 'application/pdf' : (fmt === 'png' ? 'image/png' : 'image/jpeg');
                     const fileName = `${name}.${ext}`;
 
-                    bar.style.width = `${((i)/state.dataList.length)*100}%`;
+                    bar.style.width = `${((i+1)/state.dataList.length)*100}%`;
                     txt.textContent = `Processing ${fileName}...`;
 
                     let data;
                     if (fmt === 'pdf') {
                         if (state.template.type === 'pdf') {
-                            // Slice to prevent detached buffer error
                             const doc = await PDFDocument.load(baseBytes.slice(0));
                             const p = doc.getPages()[0];
                             const { width, height } = p.getSize();
@@ -687,7 +638,6 @@
                         txt.textContent = `Emailing ${row.values['email']}...`;
                         if (await sendGmail(row.values['email'], "Your Certificate", "Attached is your document.", data, fileName, mime)) {
                             emailed++;
-                            // Only save if email succeeds (as requested)
                             const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
                             const w = await h.createWritable(); await w.write(data); await w.close();
                             saved++;
