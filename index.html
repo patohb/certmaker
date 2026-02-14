@@ -124,7 +124,7 @@
         </div>
 
         <main class="flex-1 p-4 md:p-8 overflow-y-auto">
-            <!-- Tab contents remain structured as requested -->
+            <!-- Tab Contents -->
             <section id="tab-template" class="tab-content active">
                 <div class="max-w-2xl mx-auto space-y-6">
                     <div id="template-upload-area" class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
@@ -166,9 +166,8 @@
                         </div>
                         <div id="placeholders-list" class="space-y-3 max-h-[350px] overflow-y-auto pr-2 border-b border-slate-100 pb-2"></div>
                         
-                        <!-- Requested Save Button for Template -->
                         <button onclick="manualSaveDesign()" id="btn-save-design" class="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-blue-700 transition-colors">
-                            <i data-lucide="save" class="w-4 h-4"></i> Save Design Config
+                            <i data-lucide="save" class="w-4 h-4"></i> Save Template & Design
                         </button>
 
                         <div class="pt-4 border-t border-slate-200 space-y-4">
@@ -208,6 +207,21 @@
                             </button>
                         </div>
                     </div>
+                    
+                    <!-- Process Status Tracker -->
+                    <div id="last-process-status" class="hidden bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="p-2 bg-emerald-500 rounded-lg text-white">
+                                <i data-lucide="check-circle" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-bold text-emerald-900">Last process completed</h4>
+                                <p id="status-summary" class="text-xs text-emerald-700">Files saved: 0 | Emails sent: 0</p>
+                            </div>
+                        </div>
+                        <button onclick="clearBatchStatus()" class="text-emerald-400 hover:text-emerald-600 transition-colors"><i data-lucide="x" class="w-4 h-4"></i></button>
+                    </div>
+
                     <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                         <div class="flex items-center justify-between bg-slate-50 border-b border-slate-200 px-4 py-2">
                             <div class="flex items-center gap-4 text-xs font-bold text-slate-500 uppercase">
@@ -249,7 +263,7 @@
         </main>
     </div>
 
-    <!-- Loading Overlay with Floating Status -->
+    <!-- Loading Overlay -->
     <div id="loading-overlay" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 hidden items-center justify-center">
         <div class="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-sm w-full border border-slate-100 relative overflow-hidden">
             <div id="processing-visual" class="animate-float mb-6 inline-block bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-sm">
@@ -323,6 +337,23 @@
             document.getElementById('user-info').classList.toggle('hidden', !isLoggedIn);
         }
 
+        // --- Utils ---
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) { binary += String.fromCharCode(bytes[i]); }
+            return window.btoa(binary);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
+            return bytes.buffer;
+        }
+
         // --- State Management ---
         let state = {
             activeTab: 'template',
@@ -333,10 +364,11 @@
             dragInfo: null,
             outputFormat: 'pdf',
             emailEnabled: false,
-            googleClientId: ''
+            googleClientId: '',
+            lastBatchStatus: null // Added to track/save the last process
         };
 
-        const DB_NAME = 'CertifyLocalDB_v3';
+        const DB_NAME = 'CertifyLocalDB_v5'; 
         const STORE_NAME = 'AppState';
 
         async function initDB() {
@@ -364,12 +396,25 @@
                         if (state.outputFormat) document.getElementById('output-format-select').value = state.outputFormat;
                         if (state.emailEnabled) document.getElementById('email-toggle').checked = true;
                         if (state.googleClientId) document.getElementById('google-client-id').value = state.googleClientId;
-                        renderAll(); initGsi();
+                        renderAll(); renderBatchStatus(); initGsi();
                     }
                     resolve();
                 };
             });
         }
+
+        function renderBatchStatus() {
+            const panel = document.getElementById('last-process-status');
+            const summary = document.getElementById('status-summary');
+            if (state.lastBatchStatus) {
+                panel.classList.remove('hidden');
+                summary.textContent = `Files saved: ${state.lastBatchStatus.saved} | Emails sent: ${state.lastBatchStatus.emailed} | Date: ${state.lastBatchStatus.date}`;
+            } else {
+                panel.classList.add('hidden');
+            }
+        }
+
+        function clearBatchStatus() { state.lastBatchStatus = null; renderBatchStatus(); saveState(); }
 
         function switchTab(tabId) {
             state.activeTab = tabId;
@@ -395,7 +440,7 @@
             await saveState();
             const btn = document.getElementById('btn-save-design');
             const original = btn.innerHTML;
-            btn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i> Saved Config!';
+            btn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i> Config Saved!';
             btn.classList.replace('bg-blue-600', 'bg-emerald-600');
             lucide.createIcons();
             setTimeout(() => {
@@ -460,7 +505,7 @@
 
         function removePlaceholder(id) { state.placeholders = state.placeholders.filter(x => x.id !== id); renderPlaceholders(); renderDesignCanvas(); saveState(); }
 
-        // --- Spreadsheet Grid ---
+        // --- Data Grid ---
         function toggleEmailColumn(enabled) { state.emailEnabled = enabled; renderDataTable(); saveState(); }
         function renderDataTable() {
             const header = document.getElementById('table-header');
@@ -508,6 +553,7 @@
             const reader = new FileReader();
             reader.onload = async (event) => {
                 let preview = '';
+                let dataToStore = '';
                 if (isPDF) {
                     const pdfData = new Uint8Array(event.target.result);
                     const loadingTask = pdfjsLib.getDocument({ data: pdfData });
@@ -520,8 +566,12 @@
                     canvas.width = viewport.width;
                     await page.render({ canvasContext: context, viewport: viewport }).promise;
                     preview = canvas.toDataURL();
-                } else { preview = event.target.result; }
-                state.template = { type: isPDF ? 'pdf' : 'image', data: event.target.result, name: file.name, preview: preview };
+                    dataToStore = arrayBufferToBase64(event.target.result);
+                } else {
+                    preview = event.target.result;
+                    dataToStore = event.target.result; 
+                }
+                state.template = { type: isPDF ? 'pdf' : 'image', data: dataToStore, name: file.name, preview: preview };
                 renderTemplate(); saveState();
             };
             if (isPDF) reader.readAsArrayBuffer(file); else reader.readAsDataURL(file);
@@ -575,18 +625,12 @@
             lucide.createIcons();
         }
 
-        // --- Generation & Email Helper ---
-        function arrayBufferToBase64(buffer) {
-            let binary = '';
-            const bytes = new Uint8Array(buffer);
-            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-            return btoa(binary);
-        }
-
+        // --- Processing & Gmail ---
         async function sendGmail(recipient, subject, body, attachmentData, fileName, mimeType) {
             try {
                 const boundary = "foo_bar_baz";
-                const message = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--${boundary}`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", arrayBufferToBase64(attachmentData), "", `--${boundary}--`].join("\r\n");
+                const base64Attachment = arrayBufferToBase64(attachmentData);
+                const message = [`To: ${recipient}`, `Subject: ${subject}`, "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, "Content-Type: text/plain; charset=\"UTF-8\"", "", body, "", `--${boundary}`, `Content-Type: ${mimeType}; name="${fileName}"`, `Content-Disposition: attachment; filename="${fileName}"`, "Content-Transfer-Encoding: base64", "", base64Attachment, "", `--${boundary}--`].join("\r\n");
                 const raw = btoa(unescape(encodeURIComponent(message))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
                 const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw }) });
                 return resp.ok;
@@ -610,6 +654,8 @@
                 let successEmailCount = 0;
                 let successSavedCount = 0;
 
+                const templateBytes = state.template.type === 'pdf' ? new Uint8Array(base64ToArrayBuffer(state.template.data)) : null;
+
                 for (let i = 0; i < state.dataList.length; i++) {
                     const row = state.dataList[i];
                     const recipientName = (row.values[state.placeholders[0].id] || 'Unnamed');
@@ -620,26 +666,22 @@
 
                     progressBar.style.width = `${((i) / state.dataList.length) * 100}%`;
                     loadingText.textContent = `Generating ${fileName}...`;
-                    statusIcon.className = "w-16 h-16 text-emerald-500";
-                    lucide.createIcons();
 
                     let data;
                     if (fmt === 'pdf') {
                         if (state.template.type === 'pdf') {
-                            // FIX: Using .slice(0) to prevent the "detached ArrayBuffer" error in the loop
-                            const doc = await PDFDocument.load(state.template.data.slice(0));
+                            // FRESH CLONE for every doc fixes detached buffer error
+                            const doc = await PDFDocument.load(templateBytes.slice(0));
                             const page = doc.getPages()[0];
                             const { width, height } = page.getSize();
                             state.placeholders.forEach(p => {
                                 const hex = p.color.replace('#', '');
                                 page.drawText(row.values[p.id] || '', { 
-                                    x: (p.x / 297) * width, 
-                                    y: height - ((p.y / 210) * height), 
-                                    size: p.fontSize * 1.5, 
-                                    color: rgb(parseInt(hex.substring(0,2),16)/255, parseInt(hex.substring(2,4),16)/255, parseInt(hex.substring(4,6),16)/255) 
+                                    x: (p.x / 297) * width, y: height - ((p.y / 210) * height), 
+                                    size: p.fontSize * 1.5, color: rgb(parseInt(hex.substring(0,2),16)/255, parseInt(hex.substring(2,4),16)/255, parseInt(hex.substring(4,6),16)/255) 
                                 });
                             });
-                            data = await doc.save();
+                            data = (await doc.save()).buffer;
                         } else {
                             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
                             doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210);
@@ -655,32 +697,38 @@
                         data = await (await new Promise(res => canvas.toBlob(res, mime))).arrayBuffer();
                     }
 
-                    // Email Flow
+                    // Process Workflow: Email first (if enabled), then save.
+                    let wasEmailed = false;
                     if (state.emailEnabled && row.values['email']) {
-                        loadingText.textContent = `📧 Sending to ${row.values['email']}...`;
-                        const sent = await sendGmail(row.values['email'], "Your Certificate", "Hello! Please find your generated certificate attached.", data, fileName, mime);
+                        loadingText.textContent = `📧 Emailing ${row.values['email']}...`;
+                        const sent = await sendGmail(row.values['email'], "Your Certificate", "Hello! Attached is your certificate.", data, fileName, mime);
                         if (sent) {
-                            successEmailCount++;
-                            // Only save to folder if email sent successfully as requested
-                            loadingText.textContent = `✅ Email sent! Saving to local folder...`;
+                            successEmailCount++; wasEmailed = true;
+                            loadingText.textContent = `✅ Sent! Saving to folder...`;
                             const handle = await state.directoryHandle.getFileHandle(fileName, { create: true });
                             const wr = await handle.createWritable(); await wr.write(data); await wr.close();
                             successSavedCount++;
-                        } else {
-                            loadingText.textContent = `❌ Email failed for ${row.values['email']}. Skipping file save.`;
                         }
                     } else {
-                        // Direct save if no email
-                        loadingText.textContent = `💾 Saving ${fileName} directly...`;
+                        loadingText.textContent = `💾 Saving ${fileName}...`;
                         const handle = await state.directoryHandle.getFileHandle(fileName, { create: true });
                         const wr = await handle.createWritable(); await wr.write(data); await wr.close();
                         successSavedCount++;
                     }
+
+                    // Save Last Known Process Progress to Browser
+                    state.lastBatchStatus = {
+                        saved: successSavedCount,
+                        emailed: successEmailCount,
+                        date: new Date().toLocaleString()
+                    };
+                    saveState();
                 }
                 progressBar.style.width = '100%';
-                alert(`Finished! Saved: ${successSavedCount}. Emails: ${successEmailCount}.`);
+                renderBatchStatus();
+                alert(`Batch complete! Files saved: ${successSavedCount}. Emails: ${successEmailCount}.`);
                 switchTab('gallery');
-            } catch (err) { console.error(err); alert("Processing Error: " + err.message); } finally { document.getElementById('loading-overlay').classList.replace('flex', 'hidden'); }
+            } catch (err) { console.error(err); alert("Error during process. Check console."); } finally { document.getElementById('loading-overlay').classList.replace('hidden', 'flex'); }
         }
 
         window.onload = loadState;
