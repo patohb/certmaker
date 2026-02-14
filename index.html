@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CertifyLocal</title>
+    <title>Patohb Cert Maker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -32,11 +32,12 @@
         <!-- Header -->
         <header class="bg-slate-900 text-white p-4 flex flex-col md:flex-row justify-between items-center gap-4">
             <div class="flex items-center gap-3">
-                <div class="bg-emerald-500 p-2 rounded-xl shadow-lg shadow-emerald-500/20">
-                    <i data-lucide="hard-drive" class="w-6 h-6"></i>
+                <div class="bg-emerald-500 p-2 rounded-xl shadow-lg shadow-emerald-500/20 flex items-center gap-1">
+                    <i data-lucide="flask-conical" class="w-6 h-6"></i>
+                    <i data-lucide="award" class="w-6 h-6"></i>
                 </div>
                 <div>
-                    <h1 class="text-xl font-black tracking-tight">CertifyLocal</h1>
+                    <h1 class="text-xl font-black tracking-tight">Patohb Cert Maker</h1>
                     <div id="connection-status" class="flex items-center gap-2 text-[10px] text-amber-400 font-bold uppercase tracking-wider">
                         <span data-lang="folderDisconnected">○ Folder Disconnected</span>
                     </div>
@@ -215,9 +216,11 @@
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         
+        // --- Configuration ---
         const HARDCODED_GOOGLE_CLIENT_ID = '939971084257-icn512k0in8ohsmbphr3i1uhbp1k1os4.apps.googleusercontent.com';
         const SCOPES = 'https://www.googleapis.com/auth/gmail.send';
         
+        // --- State Management ---
         let accessToken = null;
         let tokenClient;
         let state = {
@@ -260,7 +263,7 @@
         };
         let currentLang = 'en';
 
-        // --- Database ---
+        // --- Database Utils ---
         async function initDB() {
             return new Promise(resolve => {
                 const r = indexedDB.open(DB_NAME, 1);
@@ -618,7 +621,7 @@
 
             try {
                 const { jsPDF } = window.jspdf;
-                const { PDFDocument, rgb } = window.PDFLib;
+                const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
                 const fmt = state.outputFormat;
                 let saved = 0, emailed = 0;
                 
@@ -643,17 +646,38 @@
                     if (fmt === 'pdf') {
                         if (state.template.type === 'pdf') {
                             const doc = await PDFDocument.load(baseBytes.slice(0)); 
-                            const p = doc.getPages()[0];
-                            const { width, height } = p.getSize();
+                            const page = doc.getPages()[0];
+                            const { width, height } = page.getSize();
+                            // Embed font for measurement
+                            const helvetica = await doc.embedFont(StandardFonts.Helvetica);
+                            
                             state.placeholders.forEach(pl => {
                                 const h = pl.color.replace('#','');
-                                p.drawText(row.values[pl.id]||'', { x: (pl.x/297)*width, y: height-((pl.y/210)*height), size: pl.fontSize*1.5, color: rgb(parseInt(h.substring(0,2),16)/255, parseInt(h.substring(2,4),16)/255, parseInt(h.substring(4,6),16)/255) });
+                                const textSize = pl.fontSize*1.5;
+                                const text = row.values[pl.id]||'';
+                                const textWidth = helvetica.widthOfTextAtSize(text, textSize);
+                                
+                                // Center alignment logic for PDF-lib
+                                const xPos = ((pl.x/297)*width) - (textWidth / 2);
+                                
+                                page.drawText(text, { 
+                                    x: xPos, 
+                                    y: height-((pl.y/210)*height), 
+                                    size: textSize, 
+                                    color: rgb(parseInt(h.substring(0,2),16)/255, parseInt(h.substring(2,4),16)/255, parseInt(h.substring(4,6),16)/255) 
+                                });
                             });
                             data = await doc.save(); 
                         } else {
                             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
                             doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210);
-                            state.placeholders.forEach(pl => { doc.setFontSize(pl.fontSize); doc.setTextColor(pl.color); doc.text(row.values[pl.id]||'', pl.x-(doc.getTextWidth(row.values[pl.id]||'')/2), pl.y); });
+                            state.placeholders.forEach(pl => { 
+                                doc.setFontSize(pl.fontSize); 
+                                doc.setTextColor(pl.color); 
+                                // jsPDF getTextWidth is simpler
+                                const text = row.values[pl.id]||'';
+                                doc.text(text, pl.x-(doc.getTextWidth(text)/2), pl.y); 
+                            });
                             data = new Uint8Array(doc.output('arraybuffer'));
                         }
                     } else {
