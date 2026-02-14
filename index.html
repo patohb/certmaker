@@ -8,12 +8,46 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" onload="initGsi()" async defer></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
         body { font-family: 'Inter', sans-serif; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         .marker { cursor: move; user-select: none; }
+        
+        /* Spreadsheet Grid Styles */
+        .grid-cell {
+            border: 1px solid #e2e8f0;
+            padding: 0;
+            transition: background-color 0.1s;
+        }
+        .grid-cell:focus-within {
+            outline: 2px solid #10b981;
+            outline-offset: -2px;
+            background-color: #f0fdf4;
+        }
+        .grid-input {
+            width: 100%;
+            height: 100%;
+            padding: 8px 12px;
+            background: transparent;
+            border: none;
+            outline: none;
+            font-size: 13px;
+        }
+        .grid-header {
+            background-color: #f8fafc;
+            font-weight: 700;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #64748b;
+            border: 1px solid #e2e8f0;
+            padding: 10px 12px;
+        }
+
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
@@ -49,6 +83,18 @@
                     <i data-lucide="folder-open" class="w-4 h-4"></i><span class="hidden sm:inline">Gallery</span>
                 </button>
             </nav>
+
+            <!-- Google Login Section -->
+            <div id="auth-section" class="flex items-center gap-2 bg-slate-800 rounded-xl px-3 py-1.5 ml-2">
+                <button id="btn-login" onclick="handleAuthClick()" class="text-xs font-bold text-slate-300 hover:text-white flex items-center gap-2">
+                    <i data-lucide="log-in" class="w-4 h-4"></i> Sign in with Google
+                </button>
+                <div id="user-info" class="hidden items-center gap-2">
+                    <div id="user-avatar" class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-[10px] font-bold">U</div>
+                    <span id="user-email" class="text-[10px] text-slate-400 max-w-[100px] truncate"></span>
+                    <button onclick="handleSignoutClick()" class="text-slate-500 hover:text-red-400"><i data-lucide="log-out" class="w-3 h-3"></i></button>
+                </div>
+            </div>
         </header>
 
         <main class="flex-1 p-4 md:p-8 overflow-y-auto">
@@ -61,7 +107,7 @@
                                 <i data-lucide="plus" class="w-8 h-8"></i>
                             </div>
                             <h2 class="text-xl font-bold mb-1">Load Template</h2>
-                            <p class="text-slate-400 text-sm mb-6">PDF, PNG, JPEG allowed</p>
+                            <p class="text-slate-400 text-sm mb-6">PDF, PNG, JPEG, SVG allowed</p>
                             <span class="px-8 py-3 bg-slate-900 text-white rounded-2xl font-bold shadow-xl inline-block">Browse Files</span>
                             <input type="file" id="file-input" class="hidden" accept="image/*,.pdf">
                         </label>
@@ -81,8 +127,8 @@
                 <div class="grid lg:grid-cols-4 gap-8">
                     <div class="lg:col-span-3 space-y-4">
                         <div id="canvas-wrapper" class="relative bg-slate-200 rounded-2xl overflow-hidden shadow-inner cursor-crosshair aspect-[297/210]">
-                            <div id="design-canvas" class="relative w-full h-full bg-white">
-                                <!-- Template and Markers go here -->
+                            <div id="design-canvas" class="relative w-full h-full bg-white flex items-center justify-center">
+                                <p class="text-slate-300">Upload a template to begin</p>
                             </div>
                         </div>
                     </div>
@@ -93,7 +139,26 @@
                                 <i data-lucide="plus" class="w-4 h-4"></i>
                             </button>
                         </div>
-                        <div id="placeholders-list" class="space-y-3 max-h-[500px] overflow-y-auto pr-2"></div>
+                        <div id="placeholders-list" class="space-y-3 max-h-[400px] overflow-y-auto pr-2"></div>
+                        
+                        <div class="pt-4 border-t border-slate-200 space-y-4">
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Output Format</label>
+                                <select id="output-format-select" onchange="state.outputFormat = this.value; saveState();" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-emerald-500">
+                                    <option value="pdf">Portable Document (PDF)</option>
+                                    <option value="png">Image (PNG)</option>
+                                    <option value="jpg">Image (JPEG)</option>
+                                </select>
+                            </div>
+
+                            <div class="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="mail" class="w-4 h-4 text-blue-500"></i>
+                                    <span class="text-xs font-bold text-slate-700">Enable Emailing</span>
+                                </div>
+                                <input type="checkbox" id="email-toggle" onchange="toggleEmailColumn(this.checked)" class="w-4 h-4 accent-emerald-500">
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -103,8 +168,8 @@
                 <div class="space-y-6">
                     <div class="flex flex-col md:flex-row justify-between items-end gap-4">
                         <div>
-                            <h2 class="text-2xl font-black text-slate-900">Batch Processing</h2>
-                            <p class="text-slate-500 text-sm">Paste list from Excel/Sheets (Ctrl+V).</p>
+                            <h2 class="text-2xl font-black text-slate-900">Recipient Data</h2>
+                            <p class="text-slate-500 text-sm">Paste directly from Excel or Google Sheets into the grid below.</p>
                         </div>
                         <div class="flex gap-3">
                             <button onclick="selectDirectory()" id="folder-btn" class="flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all bg-amber-50 text-amber-600 border border-amber-100">
@@ -115,21 +180,41 @@
                             </button>
                         </div>
                     </div>
-                    <div class="border border-slate-200 rounded-3xl overflow-hidden bg-white shadow-sm overflow-x-auto">
-                        <table class="w-full text-left text-sm min-w-[600px]">
-                            <thead class="bg-slate-50 font-bold text-slate-400 uppercase text-[10px]">
-                                <tr id="table-header">
-                                    <th class="px-6 py-4 w-12 text-center">Idx</th>
+
+                    <!-- Spreadsheet Component -->
+                    <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                        <div class="flex items-center justify-between bg-slate-50 border-b border-slate-200 px-4 py-2">
+                            <div class="flex items-center gap-4 text-xs font-bold text-slate-500 uppercase">
+                                <span id="row-count">0 Rows</span>
+                                <span class="text-slate-300">|</span>
+                                <button onclick="clearDataTable()" class="text-red-500 hover:text-red-700 transition-colors flex items-center gap-1">
+                                    <i data-lucide="trash-2" class="w-3 h-3"></i> Clear All
+                                </button>
+                            </div>
+                            <div class="text-[10px] text-slate-400 italic">
+                                Tip: Click a cell and press Ctrl+V to paste bulk data
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto max-h-[500px]">
+                            <table class="w-full border-collapse table-fixed min-w-[800px]">
+                                <thead id="table-header" class="sticky top-0 z-20">
                                     <!-- Dynamic headers -->
-                                    <th class="px-6 py-4 w-10"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="data-table-body" class="divide-y divide-slate-100"></tbody>
-                        </table>
+                                </thead>
+                                <tbody id="data-table-body" class="bg-white">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                    <button onclick="addManualRow()" class="text-emerald-500 font-bold text-xs flex items-center gap-1">
-                        <i data-lucide="plus" class="w-3 h-3"></i> Add Manual Row
-                    </button>
+
+                    <div class="flex gap-3">
+                        <button onclick="addManualRow()" class="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-bold text-sm hover:bg-emerald-100 transition-colors">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Add Empty Row
+                        </button>
+                        <button onclick="addEmailColumn()" id="btn-add-email-col" class="hidden flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-100 transition-colors">
+                            <i data-lucide="mail-plus" class="w-4 h-4"></i> Add Email Column
+                        </button>
+                    </div>
                 </div>
             </section>
 
@@ -154,26 +239,74 @@
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden items-center justify-center">
         <div class="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-sm w-full">
-            <div class="w-16 h-16 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4"></div>
-            <h3 class="text-xl font-black text-slate-900">Processing Batch</h3>
-            <p class="text-sm text-slate-500 mt-2">Writing PDFs to your folder...</p>
+            <div id="loading-spinner" class="w-16 h-16 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4"></div>
+            <h3 id="loading-title" class="text-xl font-black text-slate-900">Processing Batch</h3>
+            <p id="loading-text" class="text-sm text-slate-500 mt-2">Writing files to your folder...</p>
         </div>
     </div>
 
     <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // --- Auth Config ---
+        const CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com'; // User needs to provide this or it's injected
+        const SCOPES = 'https://www.googleapis.com/auth/gmail.send';
+        let tokenClient;
+        let accessToken = null;
+
         // --- State ---
         let state = {
             activeTab: 'template',
-            template: null, // { type, data, name }
+            template: null,
             placeholders: [{ id: '1', name: 'Recipient Name', x: 148, y: 100, fontSize: 30, color: '#000000', bold: true }],
-            dataList: [{ id: 'init', values: { '1': 'John Doe' } }],
+            dataList: [{ id: 'init', values: { '1': 'John Doe', 'email': '' } }],
             directoryHandle: null,
-            dragInfo: null
+            dragInfo: null,
+            outputFormat: 'pdf',
+            emailEnabled: false
         };
 
-        // --- DB Helpers ---
-        const DB_NAME = 'CertifyLocalDB';
+        const DB_NAME = 'CertifyLocalDB_v3';
         const STORE_NAME = 'AppState';
+
+        // --- GSI Initialization ---
+        function initGsi() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: (resp) => {
+                    if (resp.error !== undefined) throw resp;
+                    accessToken = resp.access_token;
+                    updateAuthUI(true);
+                },
+            });
+        }
+
+        function handleAuthClick() {
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+        }
+
+        function handleSignoutClick() {
+            const token = accessToken;
+            if (token !== null) {
+                google.accounts.oauth2.revoke(token);
+                accessToken = null;
+                updateAuthUI(false);
+            }
+        }
+
+        function updateAuthUI(isLoggedIn) {
+            const loginBtn = document.getElementById('btn-login');
+            const userInfo = document.getElementById('user-info');
+            if (isLoggedIn) {
+                loginBtn.classList.add('hidden');
+                userInfo.classList.remove('hidden');
+                document.getElementById('user-email').textContent = "Authenticated";
+            } else {
+                loginBtn.classList.remove('hidden');
+                userInfo.classList.add('hidden');
+            }
+        }
 
         async function initDB() {
             return new Promise((resolve) => {
@@ -186,7 +319,6 @@
         async function saveState() {
             const db = await initDB();
             const tx = db.transaction(STORE_NAME, 'readwrite');
-            // Don't save directory handle as it can't be serialized simply
             const { directoryHandle, dragInfo, ...toSave } = state;
             tx.objectStore(STORE_NAME).put(toSave, 'current');
         }
@@ -198,6 +330,8 @@
                 request.onsuccess = () => {
                     if (request.result) {
                         state = { ...state, ...request.result };
+                        if (state.outputFormat) document.getElementById('output-format-select').value = state.outputFormat;
+                        if (state.emailEnabled) document.getElementById('email-toggle').checked = true;
                         renderAll();
                     }
                     resolve();
@@ -205,7 +339,6 @@
             });
         }
 
-        // --- Core UI Logic ---
         function switchTab(tabId) {
             state.activeTab = tabId;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -215,11 +348,12 @@
                 btn.classList.remove('bg-white', 'text-slate-900', 'shadow-xl');
                 btn.classList.add('text-slate-400', 'hover:text-white');
             });
-            const activeBtn = document.getElementById(`nav-${tabId}`);
-            activeBtn.classList.add('bg-white', 'text-slate-900', 'shadow-xl');
-            activeBtn.classList.remove('text-slate-400', 'hover:text-white');
+            document.getElementById(`nav-${tabId}`).classList.add('bg-white', 'text-slate-900', 'shadow-xl');
+            document.getElementById(`nav-${tabId}`).classList.remove('text-slate-400', 'hover:text-white');
 
             if (tabId === 'gallery') scanDirectory();
+            if (tabId === 'design') renderDesignCanvas();
+            if (tabId === 'data') renderDataTable();
         }
 
         function renderAll() {
@@ -236,11 +370,39 @@
 
             const isPDF = file.type === 'application/pdf';
             const reader = new FileReader();
-            reader.onload = (event) => {
-                state.template = { type: isPDF ? 'pdf' : 'image', data: event.target.result, name: file.name };
+            
+            reader.onload = async (event) => {
+                let preview = '';
+                if (isPDF) {
+                    try {
+                        const pdfData = new Uint8Array(event.target.result);
+                        const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                        const pdf = await loadingTask.promise;
+                        const page = await pdf.getPage(1);
+                        const viewport = page.getViewport({ scale: 2.0 });
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+                        await page.render({ canvasContext: context, viewport: viewport }).promise;
+                        preview = canvas.toDataURL();
+                    } catch (err) {
+                        console.error("PDF preview generation failed:", err);
+                    }
+                } else {
+                    preview = event.target.result;
+                }
+
+                state.template = { 
+                    type: isPDF ? 'pdf' : 'image', 
+                    data: event.target.result, 
+                    name: file.name,
+                    preview: preview 
+                };
                 renderTemplate();
                 saveState();
             };
+
             if (isPDF) reader.readAsArrayBuffer(file);
             else reader.readAsDataURL(file);
         });
@@ -253,8 +415,8 @@
             if (state.template) {
                 uploadArea.classList.add('hidden');
                 previewArea.classList.remove('hidden');
-                previewContainer.innerHTML = state.template.type === 'image' 
-                    ? `<img src="${state.template.data}" class="max-h-64 rounded">`
+                previewContainer.innerHTML = state.template.preview 
+                    ? `<img src="${state.template.preview}" class="max-h-64 rounded shadow-sm">`
                     : `<div class="p-8 flex flex-col items-center"><i data-lucide="file-text" class="w-12 h-12 text-emerald-500 mb-2"></i><span class="text-xs font-bold">${state.template.name}</span></div>`;
                 lucide.createIcons();
             } else {
@@ -270,15 +432,14 @@
             saveState();
         }
 
-        // --- Design Logic ---
         function renderDesignCanvas() {
             const canvas = document.getElementById('design-canvas');
             canvas.innerHTML = '';
             
-            if (state.template?.type === 'image') {
-                canvas.innerHTML = `<img src="${state.template.data}" class="w-full h-full object-contain pointer-events-none">`;
-            } else if (state.template?.type === 'pdf') {
-                canvas.innerHTML = `<div class="w-full h-full flex items-center justify-center text-slate-300 font-bold uppercase tracking-widest italic">PDF Template Mode</div>`;
+            if (state.template?.preview) {
+                canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full object-contain pointer-events-none select-none">`;
+            } else if (!state.template) {
+                canvas.innerHTML = `<p class="text-slate-300">Upload a template to begin</p>`;
             }
 
             state.placeholders.forEach(p => {
@@ -291,7 +452,6 @@
                 marker.style.color = p.color;
                 marker.style.fontWeight = p.bold ? 'bold' : 'normal';
                 marker.innerHTML = `<span class="text-[9px] bg-emerald-500 text-white px-1 absolute -top-4 left-0 rounded-sm">Drag</span>${p.name}`;
-                
                 marker.onmousedown = (e) => startDrag(e, p.id);
                 canvas.appendChild(marker);
             });
@@ -309,7 +469,6 @@
             const rect = document.getElementById('canvas-wrapper').getBoundingClientRect();
             const dx = ((e.clientX - state.dragInfo.startX) / rect.width) * 297;
             const dy = ((e.clientY - state.dragInfo.startY) / rect.height) * 210;
-            
             const p = state.placeholders.find(x => x.id === state.dragInfo.id);
             p.x = Math.max(0, Math.min(297, Math.round(state.dragInfo.origX + dx)));
             p.y = Math.max(0, Math.min(210, Math.round(state.dragInfo.origY + dy)));
@@ -341,15 +500,10 @@
                             <input type="color" value="${p.color}" oninput="updatePlaceholder('${p.id}', 'color', this.value)" class="w-full h-6 rounded cursor-pointer">
                         </div>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <input type="checkbox" ${p.bold ? 'checked' : ''} onchange="updatePlaceholder('${p.id}', 'bold', this.checked)" id="bold-${p.id}">
-                        <label for="bold-${p.id}" class="text-[10px] font-bold text-slate-600">Bold Font</label>
-                    </div>
                 `;
                 list.appendChild(card);
             });
             lucide.createIcons();
-            renderDataTable();
         }
 
         function addPlaceholder() {
@@ -374,49 +528,101 @@
             saveState();
         }
 
-        // --- Data Logic ---
+        // --- Spreadsheet Grid Logic ---
+        function toggleEmailColumn(enabled) {
+            state.emailEnabled = enabled;
+            renderDataTable();
+            saveState();
+        }
+
         function renderDataTable() {
             const header = document.getElementById('table-header');
-            header.innerHTML = '<th class="px-6 py-4 w-12 text-center">Idx</th>';
-            state.placeholders.forEach(p => {
-                const th = document.createElement('th');
-                th.className = 'px-6 py-4';
-                th.textContent = p.name;
-                header.appendChild(th);
-            });
-            header.innerHTML += '<th class="px-6 py-4 w-10"></th>';
+            const rowCountEl = document.getElementById('row-count');
+            
+            header.innerHTML = `
+                <tr>
+                    <th class="grid-header w-12 text-center">#</th>
+                    ${state.placeholders.map(p => `<th class="grid-header">${p.name}</th>`).join('')}
+                    ${state.emailEnabled ? `<th class="grid-header w-64 bg-blue-50 text-blue-600">Recipient Email</th>` : ''}
+                    <th class="grid-header w-12"></th>
+                </tr>
+            `;
 
             const body = document.getElementById('data-table-body');
             body.innerHTML = '';
+            
             state.dataList.forEach((row, idx) => {
                 const tr = document.createElement('tr');
-                tr.className = 'hover:bg-slate-50/50';
-                tr.innerHTML = `<td class="px-6 py-4 text-slate-300 font-mono text-center">${idx + 1}</td>`;
-                state.placeholders.forEach(p => {
-                    const td = document.createElement('td');
-                    td.className = 'px-6 py-2';
-                    const input = document.createElement('input');
-                    input.value = row.values[p.id] || '';
-                    input.className = 'w-full bg-transparent p-1 outline-none border-b border-transparent focus:border-emerald-500 transition-colors';
-                    input.oninput = (e) => {
-                        row.values[p.id] = e.target.value;
-                        saveState();
-                    };
-                    td.appendChild(input);
-                    tr.appendChild(td);
-                });
-                const delTd = document.createElement('td');
-                delTd.className = 'px-6 py-4';
-                delTd.innerHTML = `<button onclick="removeRow('${row.id}')" class="text-slate-200 hover:text-red-500"><i data-lucide="x" class="w-3 h-3"></i></button>`;
-                tr.appendChild(delTd);
+                tr.innerHTML = `
+                    <td class="grid-cell text-center bg-slate-50 text-[10px] font-mono text-slate-400 border-r border-slate-200">${idx + 1}</td>
+                    ${state.placeholders.map(p => `
+                        <td class="grid-cell">
+                            <input type="text" class="grid-input" value="${row.values[p.id] || ''}" oninput="updateCellValue('${row.id}', '${p.id}', this.value)" onpaste="handleGridPaste(event)">
+                        </td>
+                    `).join('')}
+                    ${state.emailEnabled ? `
+                        <td class="grid-cell bg-blue-50/20">
+                            <input type="email" class="grid-input font-bold text-blue-600" value="${row.values['email'] || ''}" oninput="updateCellValue('${row.id}', 'email', this.value)" onpaste="handleGridPaste(event)" placeholder="user@example.com">
+                        </td>
+                    ` : ''}
+                    <td class="grid-cell text-center">
+                        <button onclick="removeRow('${row.id}')" class="text-slate-300 hover:text-red-500 transition-colors p-2"><i data-lucide="x" class="w-3 h-3"></i></button>
+                    </td>
+                `;
                 body.appendChild(tr);
             });
+            
+            rowCountEl.textContent = `${state.dataList.length} Rows`;
             lucide.createIcons();
+        }
+
+        function updateCellValue(rowId, fieldId, value) {
+            const row = state.dataList.find(r => r.id === rowId);
+            if (row) {
+                row.values[fieldId] = value;
+                saveState();
+            }
+        }
+
+        function handleGridPaste(e) {
+            e.preventDefault();
+            const pasteData = e.clipboardData.getData('text');
+            const lines = pasteData.split(/\r?\n/).filter(line => line.trim() !== '');
+            
+            if (lines.length > 1 || lines[0].includes('\t')) {
+                const newDataList = lines.map(line => {
+                    const cells = line.split('\t');
+                    const values = {};
+                    state.placeholders.forEach((p, i) => {
+                        values[p.id] = cells[i] || '';
+                    });
+                    if (state.emailEnabled) {
+                        // Email is always the last column if enabled
+                        values['email'] = cells[state.placeholders.length] || '';
+                    }
+                    return { id: Math.random().toString(36).substr(2, 9), values };
+                });
+                state.dataList = newDataList;
+                renderDataTable();
+                saveState();
+            } else {
+                e.target.value = pasteData;
+                e.target.dispatchEvent(new Event('input'));
+            }
+        }
+
+        function clearDataTable() {
+            if (confirm("Clear all rows in the grid?")) {
+                state.dataList = [];
+                renderDataTable();
+                saveState();
+            }
         }
 
         function addManualRow() {
             const values = {};
             state.placeholders.forEach(p => values[p.id] = '');
+            if (state.emailEnabled) values['email'] = '';
             state.dataList.push({ id: Date.now().toString(), values });
             renderDataTable();
         }
@@ -427,51 +633,34 @@
             saveState();
         }
 
-        document.getElementById('data-table-body').onpaste = (e) => {
-            e.preventDefault();
-            const paste = e.clipboardData.getData('text');
-            const rows = paste.split(/\r?\n/).filter(r => r.trim() !== '');
-            state.dataList = rows.map(row => {
-                const cells = row.split('\t');
-                const values = {};
-                state.placeholders.forEach((p, idx) => { values[p.id] = cells[idx] || ''; });
-                return { id: Math.random().toString(36).substr(2, 9), values };
-            });
-            renderDataTable();
-            saveState();
-        };
-
         // --- Directory Handle & Gallery ---
         async function selectDirectory() {
-            // Compatibility Check
             if (!window.showDirectoryPicker) {
-                alert("Your browser does not support the File System Access API. This feature requires a modern browser like Chrome or Edge and must be served over HTTPS.");
+                alert("Your browser does not support folder access.");
                 return;
             }
-
             try {
                 const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
                 state.directoryHandle = handle;
-                
-                // Update Global Status Text
-                const statusEl = document.getElementById('connection-status');
-                statusEl.textContent = '● Folder Connected';
-                statusEl.classList.remove('text-amber-400');
-                statusEl.classList.add('text-emerald-400');
-                
-                // Update Button Visuals
+                document.getElementById('connection-status').textContent = '● Folder Connected';
+                document.getElementById('connection-status').classList.remove('text-amber-400');
+                document.getElementById('connection-status').classList.add('text-emerald-400');
                 const btnEl = document.getElementById('folder-btn');
                 btnEl.classList.remove('bg-amber-50', 'text-amber-600', 'border-amber-100');
                 btnEl.classList.add('bg-emerald-50', 'text-emerald-600', 'border-emerald-100');
-                
                 scanDirectory();
-            } catch (err) { 
-                // Don't alert if user just cancelled the dialog
-                if (err.name !== 'AbortError') {
-                    console.error("Directory selection failed:", err);
-                    alert("Error accessing folder: " + err.message);
-                }
-            }
+            } catch (err) { if (err.name !== 'AbortError') console.error(err); }
+        }
+
+        async function viewLocalFile(name) {
+            if (!state.directoryHandle) return;
+            try {
+                const fileHandle = await state.directoryHandle.getFileHandle(name);
+                const file = await fileHandle.getFile();
+                const url = URL.createObjectURL(file);
+                window.open(url, '_blank');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            } catch (err) { alert("Failed to open file."); }
         }
 
         async function scanDirectory() {
@@ -479,110 +668,189 @@
             const grid = document.getElementById('gallery-grid');
             const icon = document.getElementById('refresh-icon');
             icon.classList.add('animate-spin');
-            
             grid.innerHTML = '';
             try {
-                // Ensure we still have permission
-                if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
-                    // We don't want to pop a request automatically on every refresh tab, 
-                    // so we just return if we lost access.
-                    icon.classList.remove('animate-spin');
-                    return;
-                }
-
+                if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') return;
                 for await (const entry of state.directoryHandle.values()) {
-                    if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.pdf')) {
+                    const ext = entry.name.toLowerCase().split('.').pop();
+                    if (['pdf', 'png', 'jpg', 'jpeg'].includes(ext)) {
                         const file = await entry.getFile();
                         const card = document.createElement('div');
                         card.className = 'bg-white border border-slate-200 rounded-3xl p-5 shadow-sm hover:shadow-xl group transition-all';
                         card.innerHTML = `
-                            <div class="aspect-[1.4] bg-slate-50 rounded-2xl mb-4 flex items-center justify-center relative overflow-hidden">
-                                <i data-lucide="file-text" class="w-12 h-12 text-slate-200 group-hover:scale-110 transition-transform"></i>
-                                <div class="absolute inset-0 bg-emerald-500/0 group-hover:bg-emerald-500/5 transition-all"></div>
+                            <div onclick="viewLocalFile('${entry.name}')" class="aspect-[1.4] bg-slate-50 rounded-2xl mb-4 flex items-center justify-center relative overflow-hidden cursor-pointer">
+                                <i data-lucide="${ext === 'pdf' ? 'file-text' : 'image'}" class="w-12 h-12 text-slate-200 group-hover:scale-110 transition-transform"></i>
                             </div>
-                            <div class="flex justify-between items-start min-w-0">
-                                <div class="truncate pr-2">
-                                    <h4 class="font-bold text-slate-800 truncate text-sm">${entry.name}</h4>
-                                    <p class="text-[10px] text-slate-400 font-bold uppercase mt-1">${(file.size/1024).toFixed(1)} KB • ${new Date(file.lastModified).toLocaleDateString()}</p>
-                                </div>
+                            <div class="truncate pr-2">
+                                <h4 class="font-bold text-slate-800 truncate text-sm">${entry.name}</h4>
+                                <p class="text-[10px] text-slate-400 font-bold uppercase mt-1">${(file.size/1024).toFixed(1)} KB • ${new Date(file.lastModified).toLocaleDateString()}</p>
                             </div>
                         `;
                         grid.appendChild(card);
                     }
                 }
                 lucide.createIcons();
-            } catch (err) {
-                console.error("Scanning failed:", err);
-            } finally {
-                icon.classList.remove('animate-spin');
-            }
+            } finally { icon.classList.remove('animate-spin'); }
         }
 
-        // --- Bulk Generation ---
+        // --- Email Helper ---
+        async function sendGmail(recipient, subject, body, attachmentData, fileName, mimeType) {
+            if (!accessToken) return false;
+
+            const boundary = "foo_bar_baz";
+            const attachmentBase64 = btoa(new Uint8Array(attachmentData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+
+            const message = [
+                `To: ${recipient}`,
+                `Subject: ${subject}`,
+                "MIME-Version: 1.0",
+                `Content-Type: multipart/mixed; boundary="${boundary}"`,
+                "",
+                `--${boundary}`,
+                "Content-Type: text/plain; charset=\"UTF-8\"",
+                "MIME-Version: 1.0",
+                "Content-Transfer-Encoding: 7bit",
+                "",
+                body,
+                "",
+                `--${boundary}`,
+                `Content-Type: ${mimeType}; name="${fileName}"`,
+                `Content-Disposition: attachment; filename="${fileName}"`,
+                "Content-Transfer-Encoding: base64",
+                "",
+                attachmentBase64,
+                "",
+                `--${boundary}--`
+            ].join("\r\n");
+
+            const encodedMessage = btoa(unescape(encodeURIComponent(message)))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=+$/, '');
+
+            const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ raw: encodedMessage })
+            });
+
+            return response.ok;
+        }
+
         async function runGeneration() {
             if (!state.template || !state.directoryHandle) {
-                if (!state.directoryHandle) alert("Please link a local folder first using the 'Link Folder' button.");
+                alert("Please upload template and link folder.");
                 return;
             }
+            if (state.emailEnabled && !accessToken) {
+                alert("Please sign in with Google to send emails.");
+                return;
+            }
+
             document.getElementById('loading-overlay').classList.replace('hidden', 'flex');
+            const loadingText = document.getElementById('loading-text');
 
             try {
                 const { jsPDF } = window.jspdf;
                 const { PDFDocument, rgb } = window.PDFLib;
 
-                // Verify permissions before starting long job
                 if (await state.directoryHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
                     await state.directoryHandle.requestPermission({ mode: 'readwrite' });
                 }
 
-                for (const row of state.dataList) {
-                    let pdfBytes;
-                    if (state.template.type === 'pdf') {
-                        const pdfDoc = await PDFDocument.load(state.template.data);
-                        const firstPage = pdfDoc.getPages()[0];
-                        const { width, height } = firstPage.getSize();
+                const fmt = state.outputFormat || 'pdf';
+                let successCount = 0;
 
-                        for (const p of state.placeholders) {
-                            const text = row.values[p.id] || '';
-                            const pdfX = (p.x / 297) * width;
-                            const pdfY = height - ((p.y / 210) * height);
-                            const hex = p.color.replace('#', '');
-                            const r = parseInt(hex.substring(0, 2), 16) / 255;
-                            const g = parseInt(hex.substring(2, 4), 16) / 255;
-                            const b = parseInt(hex.substring(4, 6), 16) / 255;
-
-                            firstPage.drawText(text, { x: pdfX, y: pdfY, size: p.fontSize * 1.5, color: rgb(r, g, b) });
+                for (let i = 0; i < state.dataList.length; i++) {
+                    const row = state.dataList[i];
+                    loadingText.textContent = `Processing ${i + 1} of ${state.dataList.length}...`;
+                    
+                    let fileData;
+                    const mimeType = fmt === 'pdf' ? 'application/pdf' : (fmt === 'png' ? 'image/png' : 'image/jpeg');
+                    
+                    if (fmt === 'pdf') {
+                        if (state.template.type === 'pdf') {
+                            const pdfDoc = await PDFDocument.load(state.template.data);
+                            const firstPage = pdfDoc.getPages()[0];
+                            const { width, height } = firstPage.getSize();
+                            for (const p of state.placeholders) {
+                                const text = row.values[p.id] || '';
+                                const pdfX = (p.x / 297) * width;
+                                const pdfY = height - ((p.y / 210) * height);
+                                const hex = p.color.replace('#', '');
+                                firstPage.drawText(text, { 
+                                    x: pdfX, y: pdfY, size: p.fontSize * 1.5, 
+                                    color: rgb(parseInt(hex.substring(0,2),16)/255, parseInt(hex.substring(2,4),16)/255, parseInt(hex.substring(4,6),16)/255) 
+                                });
+                            }
+                            fileData = await pdfDoc.save();
+                        } else {
+                            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                            doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210);
+                            state.placeholders.forEach(p => {
+                                const text = row.values[p.id] || '';
+                                doc.setFontSize(p.fontSize);
+                                doc.setTextColor(p.color);
+                                doc.text(text, p.x - (doc.getTextWidth(text) / 2), p.y);
+                            });
+                            fileData = doc.output('arraybuffer');
                         }
-                        pdfBytes = await pdfDoc.save();
                     } else {
-                        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-                        doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210);
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const scaleFactor = 4; 
+                        canvas.width = 297 * scaleFactor;
+                        canvas.height = 210 * scaleFactor;
+                        const img = new Image();
+                        await new Promise((res) => { img.onload = res; img.src = state.template.preview; });
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                         state.placeholders.forEach(p => {
                             const text = row.values[p.id] || '';
-                            doc.setFontSize(p.fontSize);
-                            doc.setTextColor(p.color);
-                            doc.setFont(undefined, p.bold ? 'bold' : 'normal');
-                            doc.text(text, p.x - (doc.getTextWidth(text) / 2), p.y);
+                            ctx.fillStyle = p.color;
+                            ctx.font = `${p.bold ? 'bold ' : ''}${p.fontSize * scaleFactor}px Inter, sans-serif`;
+                            ctx.textAlign = 'center';
+                            ctx.fillText(text, (p.x/297)*canvas.width, (p.y/210)*canvas.height);
                         });
-                        pdfBytes = doc.output('arraybuffer');
+                        const blob = await new Promise(res => canvas.toBlob(res, mimeType, 0.95));
+                        fileData = await blob.arrayBuffer();
                     }
 
-                    const fileName = `Cert_${(row.values[state.placeholders[0].id] || 'Unnamed').replace(/[^a-z0-9]/gi, '_')}.pdf`;
+                    const ext = fmt === 'pdf' ? 'pdf' : (fmt === 'png' ? 'png' : 'jpg');
+                    const fileName = `Cert_${(row.values[state.placeholders[0].id] || 'Unnamed').replace(/[^a-z0-9]/gi, '_')}.${ext}`;
+                    
+                    // Save locally
                     const fileHandle = await state.directoryHandle.getFileHandle(fileName, { create: true });
                     const writable = await fileHandle.createWritable();
-                    await writable.write(pdfBytes);
+                    await writable.write(fileData);
                     await writable.close();
+
+                    // Send Email
+                    if (state.emailEnabled && row.values['email']) {
+                        const sent = await sendGmail(
+                            row.values['email'],
+                            "Your Certificate",
+                            "Hello, please find your certificate attached.",
+                            fileData,
+                            fileName,
+                            mimeType
+                        );
+                        if (sent) successCount++;
+                    }
                 }
+                
+                if (state.emailEnabled) alert(`Done! Sent ${successCount} emails.`);
                 switchTab('gallery');
             } catch (err) {
-                console.error("Generation error:", err);
-                alert("An error occurred during generation: " + err.message);
+                console.error(err);
+                alert("Error: " + err.message);
             } finally {
                 document.getElementById('loading-overlay').classList.replace('flex', 'hidden');
             }
         }
 
-        // Init
         window.onload = async () => {
             await loadState();
             lucide.createIcons();
