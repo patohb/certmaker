@@ -6,12 +6,15 @@
     <title>Patohb Cert Maker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- PDF Generation Libraries -->
+    <!-- PDF & Compression Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-    <!-- Fontkit is REQUIRED for custom fonts in pdf-lib -->
     <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- UPNG for 256-color PNG compression -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/upng-js/2.1.0/UPNG.min.js"></script>
+    <!-- Google Identity -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     
     <!-- Google Fonts for Preview -->
@@ -140,8 +143,9 @@
             <section id="tab-design" class="tab-content">
                 <div class="grid lg:grid-cols-4 gap-8">
                     <div class="lg:col-span-3 space-y-4">
-                        <div id="canvas-wrapper" class="relative bg-slate-200 rounded-2xl overflow-hidden shadow-inner cursor-crosshair aspect-[297/210]">
-                            <div id="design-canvas" class="relative w-full h-full bg-white flex items-center justify-center">
+                        <div id="canvas-wrapper" class="relative bg-slate-200 rounded-2xl overflow-hidden shadow-inner cursor-crosshair">
+                            <!-- Aspect ratio is handled dynamically via JS now -->
+                            <div id="design-canvas" class="relative w-full bg-white flex items-center justify-center shadow-lg mx-auto">
                                 <p class="text-slate-300" data-lang="uploadHint">Upload a template to begin</p>
                             </div>
                         </div>
@@ -161,6 +165,7 @@
                                 <select id="output-format-select" onchange="state.outputFormat = this.value; saveState();" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-emerald-500">
                                     <option value="pdf">PDF (Document)</option>
                                     <option value="png">PNG (Image)</option>
+                                    <option value="png256">Compressed PNG (256 Colors)</option>
                                     <option value="jpg">JPEG (Image)</option>
                                 </select>
                             </div>
@@ -249,15 +254,14 @@
         const HARDCODED_GOOGLE_CLIENT_ID = '939971084257-icn512k0in8ohsmbphr3i1uhbp1k1os4.apps.googleusercontent.com';
         const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email';
         
-        // Font Data - URLs for TTF files (Proxying via JSDelivr for reliability)
+        // Font Data
         const FONTS = {
             'Roboto': 'https://cdn.jsdelivr.net/npm/roboto-font@0.1.0/fonts/Roboto/roboto-regular-webfont.ttf',
-            'Montserrat': 'https://cdn.jsdelivr.net/npm/@fontsource/montserrat@5.0.18/files/montserrat-latin-400-normal.woff', // pdf-lib handles woff too usually, or we use a TTF link
-            // Using a reliable TTF source for consistency with pdf-lib fontkit
+            'Montserrat': 'https://cdn.jsdelivr.net/npm/@fontsource/montserrat@5.0.18/files/montserrat-latin-400-normal.woff', 
             'Oswald': 'https://fonts.gstatic.com/s/oswald/v49/TK3iWkUHHAIjg75cFRf3bXL8LICs1_FvsUtiZTaR.ttf',
             'Merriweather': 'https://fonts.gstatic.com/s/merriweather/v30/u-440qyriQwlOrhSvowK_l5-fCZM.ttf',
             'Great Vibes': 'https://fonts.gstatic.com/s/greatvibes/v14/RWmMoKWR9v43tzDreBNdDZnX.ttf',
-            'Helvetica': null // Standard
+            'Helvetica': null 
         };
         
         // --- State Management ---
@@ -278,7 +282,7 @@
             auth: { token: null, expiry: 0, userEmail: '' }
         };
 
-        const DB_NAME = 'CertifyLocalDB_v23'; // New DB version for font support
+        const DB_NAME = 'CertifyLocalDB_v24'; // Bumped for new format
         const STORE_NAME = 'AppState';
 
         const translations = {
@@ -499,6 +503,8 @@
                 try {
                     const dataUrl = event.target.result;
                     let preview = '', dataStr = '';
+                    let width = 0, height = 0; // Init vars
+
                     if (isPDF) {
                         const base64 = dataUrl.split(',')[1];
                         dataStr = dataUrl; 
@@ -510,10 +516,31 @@
                         const c = document.createElement('canvas'); c.width = v.width; c.height = v.height;
                         await page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise;
                         preview = c.toDataURL();
+                        
+                        // Use original PDF point dimensions for aspect ratio (unscaled)
+                        const vOrig = page.getViewport({ scale: 1.0 });
+                        width = vOrig.width;
+                        height = vOrig.height;
                     } else {
-                        preview = dataUrl; dataStr = dataUrl;
+                        // Load image to get dimensions
+                        const img = new Image();
+                        img.src = dataUrl;
+                        await new Promise(r => img.onload = r);
+                        width = img.width;
+                        height = img.height;
+                        preview = dataUrl; 
+                        dataStr = dataUrl;
                     }
-                    state.template = { type: isPDF ? 'pdf' : 'image', data: dataStr, name: file.name, preview: preview };
+                    
+                    // Save dimensions in state
+                    state.template = { 
+                        type: isPDF ? 'pdf' : 'image', 
+                        data: dataStr, 
+                        name: file.name, 
+                        preview: preview,
+                        width: width, 
+                        height: height 
+                    };
                     renderTemplate(); saveState();
                 } catch (er) { console.error(er); alert("File Load Error"); }
             };
@@ -544,41 +571,57 @@
 
         function renderDesignCanvas() {
             const canvas = document.getElementById('design-canvas');
+            const wrapper = document.getElementById('canvas-wrapper');
             canvas.innerHTML = '';
-            // FIX: Removed object-contain to force stretch (fill), ensuring WYSIWYG
-            if (state.template?.preview) canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full pointer-events-none select-none shadow-lg">`;
-            else canvas.innerHTML = `<p class="text-slate-300" data-lang="uploadHint">${translations[currentLang].uploadHint}</p>`;
             
-            state.placeholders.forEach(p => {
-                const m = document.createElement('div');
-                m.className = 'absolute marker px-2 py-1 bg-white/90 border border-emerald-500 rounded shadow-sm flex items-center whitespace-nowrap z-10';
-                m.style.left = `${(p.x/297)*100}%`; m.style.top = `${(p.y/210)*100}%`;
-                m.style.transform = 'translate(-50%,-50%)'; m.style.fontSize = `${p.fontSize*0.7}px`; m.style.color = p.color;
+            if (state.template?.preview) {
+                // Apply aspect ratio style to wrapper dynamically based on loaded template
+                if (state.template.width && state.template.height) {
+                    wrapper.style.aspectRatio = `${state.template.width} / ${state.template.height}`;
+                }
                 
-                // Canvas font styling for preview
-                m.style.fontFamily = p.font === 'Helvetica' ? 'sans-serif' : p.font;
-                if(p.font === 'Great Vibes') m.style.fontFamily = "'Great Vibes', cursive";
-                if(p.font === 'Roboto') m.style.fontFamily = "'Roboto', sans-serif";
-                if(p.font === 'Montserrat') m.style.fontFamily = "'Montserrat', sans-serif";
-                if(p.font === 'Oswald') m.style.fontFamily = "'Oswald', sans-serif";
-                if(p.font === 'Merriweather') m.style.fontFamily = "'Merriweather', serif";
+                canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full pointer-events-none select-none shadow-lg">`;
                 
-                m.style.fontWeight = p.bold ? 'bold' : 'normal';
-                m.style.fontStyle = p.italic ? 'italic' : 'normal';
-                
-                m.innerHTML = `<span class="text-[9px] bg-emerald-500 text-white px-1 absolute -top-4 left-0 rounded-sm">Drag</span>${p.name}`;
-                m.onmousedown = (e) => {
-                    state.dragInfo = { id: p.id, startX: e.clientX, startY: e.clientY, origX: p.x, origY: p.y };
-                    window.onmousemove = (me) => {
-                        const r = document.getElementById('canvas-wrapper').getBoundingClientRect();
-                        p.x = Math.max(0, Math.min(297, Math.round(state.dragInfo.origX + ((me.clientX - state.dragInfo.startX)/r.width)*297)));
-                        p.y = Math.max(0, Math.min(210, Math.round(state.dragInfo.origY + ((me.clientY - state.dragInfo.startY)/r.height)*210)));
-                        renderDesignCanvas();
+                state.placeholders.forEach(p => {
+                    const m = document.createElement('div');
+                    m.className = 'absolute marker px-2 py-1 bg-white/90 border border-emerald-500 rounded shadow-sm flex items-center whitespace-nowrap z-10';
+                    m.style.left = `${p.x}%`; 
+                    m.style.top = `${p.y}%`;
+                    m.style.transform = 'translate(-50%,-50%)'; 
+                    m.style.fontSize = `${p.fontSize * 0.7}px`; 
+                    m.style.color = p.color;
+                    
+                    m.style.fontFamily = p.font === 'Helvetica' ? 'sans-serif' : p.font;
+                    if(p.font === 'Great Vibes') m.style.fontFamily = "'Great Vibes', cursive";
+                    if(p.font === 'Roboto') m.style.fontFamily = "'Roboto', sans-serif";
+                    if(p.font === 'Montserrat') m.style.fontFamily = "'Montserrat', sans-serif";
+                    if(p.font === 'Oswald') m.style.fontFamily = "'Oswald', sans-serif";
+                    if(p.font === 'Merriweather') m.style.fontFamily = "'Merriweather', serif";
+                    
+                    m.style.fontWeight = p.bold ? 'bold' : 'normal';
+                    m.style.fontStyle = p.italic ? 'italic' : 'normal';
+                    
+                    m.innerHTML = `<span class="text-[9px] bg-emerald-500 text-white px-1 absolute -top-4 left-0 rounded-sm">Drag</span>${p.name}`;
+                    m.onmousedown = (e) => {
+                        state.dragInfo = { id: p.id, startX: e.clientX, startY: e.clientY, origX: p.x, origY: p.y };
+                        window.onmousemove = (me) => {
+                            const rect = document.getElementById('design-canvas').getBoundingClientRect();
+                            // Calculate movement in percentages
+                            const moveX = ((me.clientX - state.dragInfo.startX) / rect.width) * 100;
+                            const moveY = ((me.clientY - state.dragInfo.startY) / rect.height) * 100;
+                            
+                            p.x = Math.max(0, Math.min(100, state.dragInfo.origX + moveX));
+                            p.y = Math.max(0, Math.min(100, state.dragInfo.origY + moveY));
+                            
+                            renderDesignCanvas();
+                        };
+                        window.onmouseup = () => { window.onmousemove = null; saveState(); };
                     };
-                    window.onmouseup = () => { window.onmousemove = null; saveState(); };
-                };
-                canvas.appendChild(m);
-            });
+                    canvas.appendChild(m);
+                });
+            } else {
+                canvas.innerHTML = `<p class="text-slate-300" data-lang="uploadHint">${translations[currentLang].uploadHint}</p>`;
+            }
         }
 
         function addPlaceholder() {
@@ -790,14 +833,19 @@
                     try {
                         const row = state.dataList[i];
                         const name = (row.values[state.placeholders[0].id] || 'Cert').replace(/[^a-z0-9]/gi, '_');
-                        const ext = fmt === 'pdf' ? 'pdf' : (fmt === 'png' ? 'png' : 'jpg');
-                        const mime = fmt === 'pdf' ? 'application/pdf' : (fmt === 'png' ? 'image/png' : 'image/jpeg');
+                        let ext = '';
+                        let mime = '';
+                        if (fmt === 'pdf') { ext = 'pdf'; mime = 'application/pdf'; }
+                        else if (fmt === 'png' || fmt === 'png256') { ext = 'png'; mime = 'image/png'; }
+                        else { ext = 'jpg'; mime = 'image/jpeg'; }
+                        
                         const fileName = `${name}.${ext}`;
 
                         bar.style.width = `${((i+1)/state.dataList.length)*100}%`;
                         txt.textContent = `Processing ${fileName}...`;
 
-                        let data; 
+                        let data; // will act as ArrayBuffer or Uint8Array
+                        
                         if (fmt === 'pdf') {
                             if (state.template.type === 'pdf') {
                                 const doc = await PDFDocument.load(baseBytes.slice(0)); 
@@ -813,54 +861,66 @@
                                     // Custom Font Embedding logic
                                     let fontToUse = helvetica;
                                     if(pl.font !== 'Helvetica' && loadedFonts[pl.font]) {
-                                         // pdf-lib custom font embed
-                                         // We need to embed it *each time* for this doc instance or reuse
-                                         // Actually simpler to embed per doc
                                          fontToUse = await doc.embedFont(loadedFonts[pl.font]);
                                     }
 
                                     const textWidth = fontToUse.widthOfTextAtSize(text, textSize);
-                                    const xPos = ((pl.x/297)*width) - (textWidth / 2);
+                                    
+                                    // Position using percentages calculated from saved state (0-100)
+                                    const xPos = (pl.x / 100) * width - (textWidth / 2);
+                                    const yPos = height - ((pl.y / 100) * height);
                                     
                                     page.drawText(text, { 
-                                        x: xPos, y: height-((pl.y/210)*height), size: textSize, 
+                                        x: xPos, y: yPos, size: textSize, 
                                         font: fontToUse,
                                         color: rgb(parseInt(h.substring(0,2),16)/255, parseInt(h.substring(2,4),16)/255, parseInt(h.substring(4,6),16)/255) 
                                     });
                                 }
                                 data = await doc.save(); 
                             } else {
-                                // jsPDF with custom fonts is complex in browser without VFS, reverting to standard
-                                // OR use addFont() with base64. 
-                                // Simplified: Standard fonts for Image->PDF for now to ensure stability
                                 const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
                                 doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210, undefined, 'FAST');
                                 state.placeholders.forEach(pl => { 
                                     doc.setFontSize(pl.fontSize); doc.setTextColor(pl.color); 
                                     const text = row.values[pl.id]||'';
-                                    doc.text(text, pl.x-(doc.getTextWidth(text)/2), pl.y); 
+                                    const x = (pl.x / 100) * 297;
+                                    const y = (pl.y / 100) * 210;
+                                    doc.text(text, x, y, { align: 'center' }); 
                                 });
                                 data = new Uint8Array(doc.output('arraybuffer'));
                             }
                         } else {
-                            // Image Export (Canvas) supports loaded web fonts natively!
+                            // Image Export (Canvas)
                             const cvs = document.createElement('canvas'); const cx = cvs.getContext('2d');
-                            cvs.width = 1188; cvs.height = 840; const img = new Image();
-                            await new Promise(r => { img.onload = r; img.src = state.template.preview; });
-                            cx.drawImage(img, 0, 0, 1188, 840);
+                            // Ensure high res canvas
+                            const width = state.template.width || 2000;
+                            const height = state.template.height || 1414;
+                            cvs.width = width; cvs.height = height; 
                             
-                            // Load fonts in canvas
-                            // (Browser already loaded them via <link>)
+                            const img = new Image();
+                            await new Promise(r => { img.onload = r; img.src = state.template.preview; });
+                            cx.drawImage(img, 0, 0, width, height);
                             
                             state.placeholders.forEach(pl => { 
                                 cx.fillStyle = pl.color; 
                                 let fontName = pl.font === 'Helvetica' ? 'sans-serif' : pl.font;
                                 const style = `${pl.italic ? 'italic ' : ''}${pl.bold ? 'bold ' : ''}`;
-                                cx.font = `${style}${pl.fontSize*4}px '${fontName}'`; 
+                                const scaleFactor = width / 800; 
+                                cx.font = `${style}${pl.fontSize * 1.5 * scaleFactor}px '${fontName}'`; 
                                 cx.textAlign = 'center'; 
-                                cx.fillText(row.values[pl.id]||'', (pl.x/297)*1188, (pl.y/210)*840); 
+                                cx.fillText(row.values[pl.id]||'', (pl.x/100)*width, (pl.y/100)*height); 
                             });
-                            data = new Uint8Array(await (await new Promise(r => cvs.toBlob(r, mime, 0.8))).arrayBuffer());
+
+                            if (fmt === 'png256') {
+                                // 256 Color Compression logic using UPNG
+                                const imageData = cx.getImageData(0, 0, width, height);
+                                // Returns ArrayBuffer directly
+                                const pngBuf = UPNG.encode([imageData.data.buffer], width, height, 256);
+                                data = new Uint8Array(pngBuf);
+                            } else {
+                                // Standard Blob logic
+                                data = new Uint8Array(await (await new Promise(r => cvs.toBlob(r, mime, 0.8))).arrayBuffer());
+                            }
                         }
 
                         // Check size limit for email (20MB)
@@ -875,7 +935,6 @@
                                 const sent = await sendGmail(row.values['email'], "Your Certificate", "Attached is your document.", data, fileName, mime);
                                 if (sent) emailed++;
                                 
-                                // Always save to folder
                                 if (await saveFileToFolder(fileName, data)) saved++;
                             }
                         } else {
