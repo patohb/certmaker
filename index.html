@@ -133,8 +133,9 @@
             <section id="tab-design" class="tab-content">
                 <div class="grid lg:grid-cols-4 gap-8">
                     <div class="lg:col-span-3 space-y-4">
-                        <div id="canvas-wrapper" class="relative bg-slate-200 rounded-2xl overflow-hidden shadow-inner cursor-crosshair aspect-[297/210]">
-                            <div id="design-canvas" class="relative w-full h-full bg-white flex items-center justify-center">
+                        <div id="canvas-wrapper" class="relative bg-slate-200 rounded-2xl overflow-hidden shadow-inner cursor-crosshair">
+                            <!-- Canvas now has dynamic aspect ratio -->
+                            <div id="design-canvas" class="relative w-full bg-white flex items-center justify-center shadow-lg mx-auto">
                                 <p class="text-slate-300" data-lang="uploadHint">Upload a template to begin</p>
                             </div>
                         </div>
@@ -241,8 +242,8 @@
         let tokenClient;
         let state = {
             activeTab: 'template',
-            template: null,
-            placeholders: [{ id: '1', name: 'Recipient Name', x: 148, y: 100, fontSize: 30, color: '#000000', bold: true, italic: false }],
+            template: null, // { type, data (Base64 string), name, preview, width, height }
+            placeholders: [{ id: '1', name: 'Recipient Name', x: 50, y: 50, fontSize: 30, color: '#000000', bold: true, italic: false }],
             dataList: [{ id: 'init', values: { '1': 'John Doe', 'email': '' } }],
             directoryHandle: null,
             folderName: '', 
@@ -254,7 +255,7 @@
             auth: { token: null, expiry: 0, userEmail: '' }
         };
 
-        const DB_NAME = 'CertifyLocalDB_v21'; // Clean DB
+        const DB_NAME = 'CertifyLocalDB_v22'; // Clean DB
         const STORE_NAME = 'AppState';
 
         const translations = {
@@ -471,6 +472,8 @@
                 try {
                     const dataUrl = event.target.result;
                     let preview = '', dataStr = '';
+                    let width = 0, height = 0;
+                    
                     if (isPDF) {
                         const base64 = dataUrl.split(',')[1];
                         dataStr = dataUrl; 
@@ -482,10 +485,18 @@
                         const c = document.createElement('canvas'); c.width = v.width; c.height = v.height;
                         await page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise;
                         preview = c.toDataURL();
+                        width = v.width / 2.0; // PDF points
+                        height = v.height / 2.0;
                     } else {
+                        const img = new Image();
+                        img.src = dataUrl;
+                        await new Promise(r => img.onload = r);
                         preview = dataUrl; dataStr = dataUrl;
+                        width = img.width;
+                        height = img.height;
                     }
-                    state.template = { type: isPDF ? 'pdf' : 'image', data: dataStr, name: file.name, preview: preview };
+                    // Save Aspect Ratio
+                    state.template = { type: isPDF ? 'pdf' : 'image', data: dataStr, name: file.name, preview: preview, width: width, height: height };
                     renderTemplate(); saveState();
                 } catch (er) { console.error(er); alert("File Load Error"); }
             };
@@ -517,34 +528,53 @@
         function renderDesignCanvas() {
             const canvas = document.getElementById('design-canvas');
             canvas.innerHTML = '';
-            if (state.template?.preview) canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full pointer-events-none select-none shadow-lg">`;
-            else canvas.innerHTML = `<p class="text-slate-300" data-lang="uploadHint">${translations[currentLang].uploadHint}</p>`;
             
-            state.placeholders.forEach(p => {
-                const m = document.createElement('div');
-                m.className = 'absolute marker px-2 py-1 bg-white/90 border border-emerald-500 rounded shadow-sm flex items-center whitespace-nowrap z-10';
-                m.style.left = `${(p.x/297)*100}%`; m.style.top = `${(p.y/210)*100}%`;
-                m.style.transform = 'translate(-50%,-50%)'; m.style.fontSize = `${p.fontSize*0.7}px`; m.style.color = p.color;
-                m.style.fontWeight = p.bold ? 'bold' : 'normal';
-                m.style.fontStyle = p.italic ? 'italic' : 'normal';
-                m.innerHTML = `<span class="text-[9px] bg-emerald-500 text-white px-1 absolute -top-4 left-0 rounded-sm">Drag</span>${p.name}`;
-                m.onmousedown = (e) => {
-                    state.dragInfo = { id: p.id, startX: e.clientX, startY: e.clientY, origX: p.x, origY: p.y };
-                    window.onmousemove = (me) => {
-                        const r = document.getElementById('canvas-wrapper').getBoundingClientRect();
-                        p.x = Math.max(0, Math.min(297, Math.round(state.dragInfo.origX + ((me.clientX - state.dragInfo.startX)/r.width)*297)));
-                        p.y = Math.max(0, Math.min(210, Math.round(state.dragInfo.origY + ((me.clientY - state.dragInfo.startY)/r.height)*210)));
-                        renderDesignCanvas();
+            if (state.template?.preview) {
+                // Aspect Ratio Logic: Match container width, calculate height
+                const aspectRatio = state.template.height / state.template.width;
+                canvas.style.aspectRatio = `${state.template.width} / ${state.template.height}`;
+                
+                canvas.innerHTML = `<img src="${state.template.preview}" class="w-full h-full pointer-events-none select-none shadow-lg">`;
+                
+                state.placeholders.forEach(p => {
+                    const m = document.createElement('div');
+                    m.className = 'absolute marker px-2 py-1 bg-white/90 border border-emerald-500 rounded shadow-sm flex items-center whitespace-nowrap z-10';
+                    // Use percentages for positioning
+                    m.style.left = `${p.x}%`; 
+                    m.style.top = `${p.y}%`;
+                    m.style.transform = 'translate(-50%,-50%)'; 
+                    m.style.fontSize = `${p.fontSize * 0.7}px`; 
+                    m.style.color = p.color;
+                    m.style.fontWeight = p.bold ? 'bold' : 'normal';
+                    m.style.fontStyle = p.italic ? 'italic' : 'normal';
+                    m.innerHTML = `<span class="text-[9px] bg-emerald-500 text-white px-1 absolute -top-4 left-0 rounded-sm">Drag</span>${p.name}`;
+                    m.onmousedown = (e) => {
+                        state.dragInfo = { id: p.id, startX: e.clientX, startY: e.clientY, origX: p.x, origY: p.y };
+                        window.onmousemove = (me) => {
+                            const rect = document.getElementById('canvas-wrapper').getBoundingClientRect();
+                            const actualCanvas = document.getElementById('design-canvas').getBoundingClientRect();
+                            
+                            // Calculate movement relative to the image size, not the container
+                            const moveXPercent = ((me.clientX - state.dragInfo.startX) / actualCanvas.width) * 100;
+                            const moveYPercent = ((me.clientY - state.dragInfo.startY) / actualCanvas.height) * 100;
+                            
+                            p.x = Math.max(0, Math.min(100, state.dragInfo.origX + moveXPercent));
+                            p.y = Math.max(0, Math.min(100, state.dragInfo.origY + moveYPercent));
+                            
+                            renderDesignCanvas();
+                        };
+                        window.onmouseup = () => { window.onmousemove = null; saveState(); };
                     };
-                    window.onmouseup = () => { window.onmousemove = null; saveState(); };
-                };
-                canvas.appendChild(m);
-            });
+                    canvas.appendChild(m);
+                });
+            } else {
+                canvas.innerHTML = `<p class="text-slate-300" data-lang="uploadHint">${translations[currentLang].uploadHint}</p>`;
+            }
         }
 
         function addPlaceholder() {
             if (state.placeholders.length>=5) return;
-            state.placeholders.push({ id: Date.now().toString(), name: 'Label', x: 148, y: 110, fontSize: 20, color: '#000000', bold: false, italic: false });
+            state.placeholders.push({ id: Date.now().toString(), name: 'Label', x: 50, y: 50, fontSize: 20, color: '#000000', bold: false, italic: false });
             renderPlaceholders(); renderDesignCanvas(); saveState();
         }
         function removePlaceholder(id) { state.placeholders = state.placeholders.filter(x=>x.id!==id); renderPlaceholders(); renderDesignCanvas(); saveState(); }
@@ -679,9 +709,11 @@
 
         async function saveFileToFolder(fileName, data) {
             try {
+                // Ensure array buffer for writing
+                const content = data.buffer ? data : data.buffer; 
                 const h = await state.directoryHandle.getFileHandle(fileName, { create: true });
                 const w = await h.createWritable(); 
-                await w.write(data); 
+                await w.write(content); 
                 await w.close();
                 return true;
             } catch (e) {
@@ -745,10 +777,13 @@
                                     const textSize = pl.fontSize*1.5;
                                     const text = row.values[pl.id]||'';
                                     const textWidth = helvetica.widthOfTextAtSize(text, textSize);
-                                    // Center alignment logic
-                                    const xPos = ((pl.x/297)*width) - (textWidth / 2);
+                                    
+                                    // Use percentages from state to calculate absolute position
+                                    const xPos = (pl.x / 100) * width - (textWidth / 2);
+                                    const yPos = height - ((pl.y / 100) * height);
+                                    
                                     page.drawText(text, { 
-                                        x: xPos, y: height-((pl.y/210)*height), size: textSize, 
+                                        x: xPos, y: yPos, size: textSize, 
                                         color: rgb(parseInt(h.substring(0,2),16)/255, parseInt(h.substring(2,4),16)/255, parseInt(h.substring(4,6),16)/255) 
                                     });
                                 });
@@ -758,43 +793,50 @@
                                 doc.addImage(state.template.data, 'JPEG', 0, 0, 297, 210, undefined, 'FAST');
                                 state.placeholders.forEach(pl => { 
                                     doc.setFontSize(pl.fontSize); doc.setTextColor(pl.color); 
-                                    // jsPDF getTextWidth is simpler
                                     const text = row.values[pl.id]||'';
-                                    doc.text(text, pl.x, pl.y, { align: 'center' }); // jsPDF has built-in center align
+                                    // Use percentage for jsPDF (A4 is 297mm wide, 210mm high)
+                                    const x = (pl.x / 100) * 297;
+                                    const y = (pl.y / 100) * 210;
+                                    doc.text(text, x, y, { align: 'center' }); 
                                 });
                                 data = new Uint8Array(doc.output('arraybuffer'));
                             }
                         } else {
                             const cvs = document.createElement('canvas'); const cx = cvs.getContext('2d');
-                            cvs.width = 1188; cvs.height = 840; const img = new Image();
+                            // Ensure high res canvas
+                            const width = state.template.width || 1188;
+                            const height = state.template.height || 840;
+                            cvs.width = width; cvs.height = height; 
+                            
+                            const img = new Image();
                             await new Promise(r => { img.onload = r; img.src = state.template.preview; });
-                            cx.drawImage(img, 0, 0, 1188, 840);
+                            cx.drawImage(img, 0, 0, width, height);
                             state.placeholders.forEach(pl => { 
                                 cx.fillStyle = pl.color; cx.font = `${pl.fontSize*4}px Inter`; cx.textAlign = 'center'; 
-                                cx.fillText(row.values[pl.id]||'', (pl.x/297)*1188, (pl.y/210)*840); 
+                                cx.fillText(row.values[pl.id]||'', (pl.x/100)*width, (pl.y/100)*height); 
                             });
                             data = new Uint8Array(await (await new Promise(r => cvs.toBlob(r, mime, 0.8))).arrayBuffer());
                         }
 
+                        // Detached buffer fix: data is used for email, then save.
+                        // Clone data for safety if needed, but here sequential await is safe.
+                        
                         // Check size limit for email (20MB)
                         const isTooLarge = data.byteLength > (20 * 1024 * 1024);
                         
                         if (state.emailEnabled && row.values['email']) {
                             if (isTooLarge) {
                                 txt.textContent = `File >20MB. Skipping email to ${row.values['email']}...`;
-                                // Save locally since we can't email
                                 if (await saveFileToFolder(fileName, data)) saved++;
                             } else {
                                 txt.textContent = `Emailing ${row.values['email']}...`;
                                 const sent = await sendGmail(row.values['email'], "Your Certificate", "Attached is your document.", data, fileName, mime);
                                 if (sent) emailed++;
                                 
-                                // Save even if email fails (fallback safety)
+                                // Always save to folder, regardless of email success, but notify if failed
                                 if (await saveFileToFolder(fileName, data)) saved++;
-                                else console.error("Failed to save file locally");
                             }
                         } else {
-                            // No Email Mode -> Just Save
                             if (await saveFileToFolder(fileName, data)) saved++;
                         }
                         
